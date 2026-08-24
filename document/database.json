@@ -1,0 +1,110 @@
+[
+  {
+    "create_table_sql": "CREATE TABLE public.ai_deployments (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    model_id uuid NOT NULL,\n    deployment_name character varying(200) NOT NULL,\n    endpoint text,\n    region character varying(100),\n    priority integer DEFAULT 0,\n    is_default boolean NOT NULL DEFAULT false,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_models (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    provider_id uuid NOT NULL,\n    code character varying(100) NOT NULL,\n    display_name character varying(200) NOT NULL,\n    model_type character varying(50) NOT NULL,\n    context_window integer,\n    max_output_tokens integer,\n    supports_stream boolean NOT NULL DEFAULT true,\n    supports_json boolean NOT NULL DEFAULT false,\n    supports_vision boolean NOT NULL DEFAULT false,\n    supports_tools boolean NOT NULL DEFAULT false,\n    description text,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_profiles (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    name character varying(255) NOT NULL,\n    description text,\n    storage_provider_id uuid NOT NULL,\n    vector_provider_id uuid NOT NULL,\n    embedding_provider_id uuid NOT NULL,\n    is_default boolean NOT NULL DEFAULT false,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    extract_storage_provider_id uuid,\n    chunk_storage_provider_id uuid\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_providers (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(50) NOT NULL,\n    name character varying(100) NOT NULL,\n    provider_type character varying(50) NOT NULL,\n    base_url text,\n    api_version character varying(50),\n    description text,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_routing_policies (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    task_id uuid NOT NULL,\n    name character varying(200) NOT NULL,\n    strategy character varying(50) NOT NULL,\n    description text,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_routing_policy_items (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    routing_policy_id uuid NOT NULL,\n    deployment_id uuid NOT NULL,\n    priority integer NOT NULL,\n    weight integer,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ai_tasks (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(200) NOT NULL,\n    description text,\n    is_enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.chunking_strategies (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.classification_engines (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    provider character varying(100) NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.data_hub_providers (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    provider character varying(100) NOT NULL,\n    configuration_schema jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_chunk_batches (\n    id uuid NOT NULL,\n    document_id uuid NOT NULL,\n    batch_index integer NOT NULL,\n    total_chunks integer NOT NULL,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    classification_completed boolean NOT NULL DEFAULT false,\n    embedding_completed boolean NOT NULL DEFAULT false,\n    batch_completed boolean NOT NULL DEFAULT false\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_chunk_classifications (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    chunk_id uuid NOT NULL,\n    model_name character varying(255) NOT NULL,\n    label character varying(255) NOT NULL,\n    confidence double precision,\n    raw_response jsonb,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_chunk_embeddings (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    chunk_id uuid NOT NULL,\n    model_name character varying(255) NOT NULL,\n    embedding public.vector NOT NULL,\n    dimension integer NOT NULL,\n    token_count integer,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_chunks (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    batch_id uuid NOT NULL,\n    document_id uuid NOT NULL,\n    chunk_index integer NOT NULL,\n    title text,\n    content text NOT NULL,\n    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_extractions (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    document_id uuid NOT NULL,\n    structured_content jsonb NOT NULL,\n    page_count integer,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_images (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    document_id uuid NOT NULL,\n    page_number integer NOT NULL,\n    asset_url text NOT NULL,\n    description text,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_pipeline_states (\n    document_id uuid NOT NULL,\n    chunks jsonb,\n    labels jsonb,\n    embeddings jsonb,\n    chunks_ready boolean NOT NULL DEFAULT false,\n    classification_ready boolean NOT NULL DEFAULT false,\n    embedding_ready boolean NOT NULL DEFAULT false,\n    index_event_published boolean NOT NULL DEFAULT false\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.document_processing_tasks (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    document_id uuid NOT NULL,\n    task_type character varying(50) NOT NULL,\n    status character varying(50) NOT NULL,\n    retry_count integer NOT NULL DEFAULT 0,\n    error_message text,\n    started_at timestamp with time zone,\n    finished_at timestamp with time zone,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    batch_id uuid\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.documents (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    source_id uuid NOT NULL,\n    file_name character varying(500) NOT NULL,\n    department character varying(255),\n    owner_role character varying(255),\n    security_level character varying(255),\n    document_type character varying(255),\n    source_file_url text,\n    last_modified_at timestamp with time zone,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    file_extension character varying(20),\n    file_size_bytes bigint,\n    external_file_id text,\n    provider_metadata jsonb,\n    original_file_path text\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.embedding_models (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    provider character varying(100) NOT NULL,\n    dimension integer NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.enterprises (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    description text,\n    status character varying(50) NOT NULL DEFAULT 'ACTIVE'::character varying,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.extraction_engines (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    provider character varying(100) NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.features (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    description text,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ingest_jobs (\n    id text NOT NULL,\n    document_id uuid NOT NULL,\n    status character varying(50) NOT NULL,\n    error_message text,\n    started_at timestamp with time zone,\n    finished_at timestamp with time zone\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ingestion_document_states (\n    document_id uuid NOT NULL,\n    ingestion_run_id uuid NOT NULL,\n    status character varying(50) NOT NULL,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ingestion_job_configurations (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    ingestion_job_id uuid NOT NULL,\n    is_classification boolean NOT NULL DEFAULT false,\n    chunking_strategy_id uuid NOT NULL,\n    extraction_engine_id uuid NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    model_set_id uuid\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ingestion_jobs (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    trigger_type character varying(50) NOT NULL,\n    status character varying(50) NOT NULL,\n    is_build_graph boolean NOT NULL DEFAULT false,\n    total_files integer NOT NULL DEFAULT 0,\n    completed_files integer NOT NULL DEFAULT 0,\n    failed_files integer NOT NULL DEFAULT 0,\n    started_at timestamp with time zone,\n    finished_at timestamp with time zone,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    scope_type character varying(50),\n    scope_data jsonb,\n    knowledge_space_id uuid\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.ingestion_sources (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    name character varying(255) NOT NULL,\n    source_type character varying(50) NOT NULL,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    provider_type character varying(100),\n    provider_configuration jsonb\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.knowledge_space_data_hubs (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    knowledge_space_id uuid NOT NULL,\n    data_hub_provider_id uuid NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.knowledge_space_embedding_configs (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    knowledge_space_id uuid NOT NULL,\n    embedding_model_id uuid NOT NULL,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.knowledge_spaces (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    name character varying(255) NOT NULL,\n    code character varying(100) NOT NULL,\n    description text,\n    status character varying(50) NOT NULL DEFAULT 'ACTIVE'::character varying,\n    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now(),\n    enterprise_id uuid\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.model_set_items (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    model_set_id uuid NOT NULL,\n    ai_model_id uuid NOT NULL,\n    priority integer NOT NULL,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.model_sets (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    feature_id uuid NOT NULL,\n    code character varying(100) NOT NULL,\n    name character varying(255) NOT NULL,\n    description text,\n    enabled boolean NOT NULL DEFAULT true,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.storage_assets (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    document_id uuid NOT NULL,\n    storage_provider_id uuid NOT NULL,\n    asset_type character varying(50) NOT NULL,\n    storage_path text NOT NULL,\n    content_type character varying(255),\n    size_bytes bigint,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.sync_states (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    source_id uuid NOT NULL,\n    delta_token text,\n    last_sync_at timestamp with time zone,\n    created_at timestamp with time zone NOT NULL DEFAULT now(),\n    updated_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  },
+  {
+    "create_table_sql": "CREATE TABLE public.table_assets (\n    id uuid NOT NULL DEFAULT gen_random_uuid(),\n    document_id uuid NOT NULL,\n    sheet_name text NOT NULL,\n    description text,\n    row_count bigint,\n    schema_json jsonb NOT NULL,\n    storage_path text NOT NULL,\n    created_at timestamp with time zone NOT NULL DEFAULT now()\n);\n"
+  }
+]
