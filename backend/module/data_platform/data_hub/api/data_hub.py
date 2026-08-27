@@ -12,6 +12,7 @@ from module.data_platform.data_hub.domain.value_objects.source_reference import 
     SourceReference,
 )
 from collections.abc import AsyncIterator
+from abc import abstractmethod
 
 
 class DataHub:

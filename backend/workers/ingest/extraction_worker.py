@@ -1,10 +1,16 @@
 import asyncio
 import json
 import socket
+from collections.abc import AsyncContextManager
+from collections.abc import Callable
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from uuid import UUID
+
+from module.ingest.extraction.application.use_cases.extract_document import (
+    ExtractDocumentUseCase,
+)
 
 
 class ExtractionWorker:
@@ -13,7 +19,12 @@ class ExtractionWorker:
         self,
         queue_client,
         task_repository,
-        use_case,
+        use_case_factory: Callable[
+            [],
+            AsyncContextManager[
+                ExtractDocumentUseCase
+            ],
+        ],
         uow,
         claim_size: int = 20,
         lease_seconds: int = 300,
@@ -23,7 +34,7 @@ class ExtractionWorker:
         self.task_repository = (
             task_repository
         )
-        self.use_case = use_case
+        self.use_case_factory = use_case_factory
         self.uow = uow
 
         self.claim_size = claim_size
@@ -122,6 +133,7 @@ class ExtractionWorker:
     ) -> None:
 
         async with self.semaphore:
-            await self.use_case.execute(
-                task_id,
-            )
+            async with self.use_case_factory() as use_case:
+                await use_case.execute(
+                    task_id,
+                )

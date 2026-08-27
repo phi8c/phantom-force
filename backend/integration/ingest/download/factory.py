@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.download.application.use_cases.download_file import (
@@ -79,3 +82,25 @@ def create_download_file_use_case(
         uow=uow,
         max_attempts=max_attempts,
     )
+
+
+@asynccontextmanager
+async def create_download_file_use_case_scope(
+    *,
+    session_factory,
+    document_source: DocumentSource,
+    object_storage: ObjectStorage,
+    extraction_dispatcher: ExtractionDispatcher,
+    max_attempts: int = 3,
+) -> AsyncIterator[DownloadFileUseCase]:
+
+    async with session_factory() as session:
+        yield create_download_file_use_case(
+            session=session,
+            document_source=document_source,
+            object_storage=object_storage,
+            extraction_dispatcher=(
+                extraction_dispatcher
+            ),
+            max_attempts=max_attempts,
+        )

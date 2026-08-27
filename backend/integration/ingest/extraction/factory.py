@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.extraction.application.use_cases.extract_document import (
@@ -105,3 +108,25 @@ def create_extract_document_use_case_with_chunking(
         ),
         max_attempts=max_attempts,
     )
+
+
+@asynccontextmanager
+async def create_extract_document_use_case_scope_with_chunking(
+    *,
+    session_factory,
+    file_storage,
+    object_storage: ObjectStorage,
+    chunking_dispatcher: ChunkingDispatcher,
+    max_attempts: int = 3,
+) -> AsyncIterator[ExtractDocumentUseCase]:
+
+    async with session_factory() as session:
+        yield create_extract_document_use_case_with_chunking(
+            session=session,
+            file_storage=file_storage,
+            object_storage=object_storage,
+            chunking_dispatcher=(
+                chunking_dispatcher
+            ),
+            max_attempts=max_attempts,
+        )
