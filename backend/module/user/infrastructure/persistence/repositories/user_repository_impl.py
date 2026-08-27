@@ -17,7 +17,7 @@ from module.user.infrastructure.persistence.models.user_model import (
     UserModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

@@ -19,7 +19,7 @@ from module.ingest.discovery.infrastructure.persistence.models.document_model im
     DocumentModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

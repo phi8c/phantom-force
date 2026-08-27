@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.shared.database.base import Base
+from shared.database.base import Base
 
 
 class VerificationTokenModel(

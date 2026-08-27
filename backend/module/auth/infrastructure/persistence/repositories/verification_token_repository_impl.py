@@ -23,7 +23,7 @@ from module.auth.infrastructure.persistence.models.verification_token_model impo
     VerificationTokenModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

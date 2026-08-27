@@ -6,7 +6,7 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.shared.database.base import (
+from shared.database.base import (
     Base,
     TimestampMixin,
     UUIDMixin,

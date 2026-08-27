@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from uuid import UUID
 
-from app.shared.database.base import (
+from shared.database.base import (
     Base,
     TimestampMixin,
     UUIDMixin,

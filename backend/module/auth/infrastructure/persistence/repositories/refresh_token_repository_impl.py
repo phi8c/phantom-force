@@ -20,7 +20,7 @@ from module.auth.infrastructure.persistence.models.refresh_token_model import (
     RefreshTokenModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

@@ -20,7 +20,7 @@ from module.auth.infrastructure.persistence.models.auth_session_model import (
     AuthSessionModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

@@ -40,7 +40,7 @@ from module.auth.infrastructure.persistence.models.password_history_model import
     PasswordHistoryModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 

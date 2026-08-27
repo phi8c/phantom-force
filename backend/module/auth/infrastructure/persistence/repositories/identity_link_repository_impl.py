@@ -24,7 +24,7 @@ from module.auth.infrastructure.persistence.models.identity_link_model import (
     IdentityLinkModel,
 )
 
-from app.shared.repositories.base_repository import (
+from shared.repositories.base_repository import (
     BaseRepository,
 )
 
