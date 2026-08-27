@@ -1,16 +1,14 @@
 from collections.abc import AsyncIterator
 from collections.abc import Callable
-from typing import Awaitable
 from uuid import UUID
 
 from module.ingest.download.domain.contracts.document_source import (
     DocumentSource,
     DownloadSource,
 )
-
 from module.ingest.download.domain.contracts.download_document_reader import (
-    DownloadDocumentReader,
     DownloadDocument,
+    DownloadDocumentReader,
 )
 
 
