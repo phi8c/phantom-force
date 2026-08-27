@@ -1,5 +1,5 @@
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID
 
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -7,10 +7,8 @@ from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import Text
 from sqlalchemy import func
-
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID
-
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
@@ -20,10 +18,7 @@ from app.shared.database.base import Base
 class DocumentChunkModel(
     Base,
 ):
-
-    __tablename__ = (
-        "document_chunks"
-    )
+    __tablename__ = "document_chunks"
 
     __table_args__ = (
         Index(
@@ -39,14 +34,14 @@ class DocumentChunkModel(
         },
     )
 
-    id: Mapped[str] = mapped_column(
-        UUID(as_uuid=True),
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
         primary_key=True,
-        default=uuid4,
+        server_default=func.gen_random_uuid(),
     )
 
-    batch_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=True),
+    batch_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey(
             "document_chunk_batches.id",
             ondelete="CASCADE",
@@ -54,8 +49,8 @@ class DocumentChunkModel(
         nullable=False,
     )
 
-    document_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=True),
+    document_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey(
             "documents.id",
             ondelete="CASCADE",
@@ -70,6 +65,7 @@ class DocumentChunkModel(
 
     title: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
     )
 
     content: Mapped[str] = mapped_column(
@@ -85,9 +81,7 @@ class DocumentChunkModel(
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(
-            timezone=True,
-        ),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
     )

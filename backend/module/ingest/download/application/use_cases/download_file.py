@@ -10,6 +10,10 @@ from module.ingest.download.domain.contracts.download_task_repository import (
     DownloadTaskRepository,
 )
 
+from module.ingest.download.domain.contracts.extraction_task_scheduler import (
+    ExtractionTaskScheduler,
+)
+
 from module.ingest.download.domain.contracts.object_storage import (
     ObjectStorage,
 )
@@ -36,6 +40,7 @@ class DownloadFileUseCase:
         document_source: DocumentSource,
         object_storage: ObjectStorage,
         storage_asset_repository: StorageAssetRepository,
+        extraction_task_scheduler: ExtractionTaskScheduler,
         uow: UnitOfWork,
         max_attempts: int = 3,
     ):
@@ -44,6 +49,9 @@ class DownloadFileUseCase:
         self.object_storage = object_storage
         self.storage_asset_repository = (
             storage_asset_repository
+        )
+        self.extraction_task_scheduler = (
+            extraction_task_scheduler
         )
         self.uow = uow
         self.max_attempts = max_attempts
@@ -132,7 +140,24 @@ class DownloadFileUseCase:
                 task,
             )
 
+            await (
+                self.extraction_task_scheduler
+                .ensure_ready_task(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                )
+            )
+
             await self.uow.commit()
+
+            await (
+                self.extraction_task_scheduler
+                .dispatch_job(
+                    task.ingestion_job_id,
+                )
+            )
 
         except Exception as exc:
 

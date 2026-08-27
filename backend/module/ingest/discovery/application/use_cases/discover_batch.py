@@ -26,6 +26,9 @@ from module.ingest.discovery.domain.contracts.ingestion_discovery_state_reposito
 from module.ingest.discovery.domain.contracts.ingestion_document_state_repository import (
     IngestionDocumentStateRepository,
 )
+from module.ingest.discovery.domain.contracts.unit_of_work import (
+    UnitOfWork,
+)
 from module.ingest.discovery.domain.entities.document import (
     Document,
 )
@@ -47,7 +50,7 @@ class DiscoverBatchUseCase:
         discovery_state_repository: IngestionDiscoveryStateRepository,
         provider_resolver: DiscoveryProviderResolver,
         download_task_scheduler: DownloadTaskScheduler,
-        uow,
+        uow: UnitOfWork,
     ):
         self.source_catalog = source_catalog
         self.document_repository = document_repository
@@ -97,10 +100,6 @@ class DiscoverBatchUseCase:
             discovery_state is not None
             and discovery_state.completed
         ):
-            await self.download_task_scheduler.dispatch_job(
-                request.ingestion_job_id,
-            )
-
             return DiscoverBatchResponse(
                 ingestion_job_id=(
                     request.ingestion_job_id
