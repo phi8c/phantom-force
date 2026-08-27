@@ -1,8 +1,10 @@
 from datetime import datetime
 from datetime import timezone
+from collections.abc import Iterable
 from uuid import UUID
 from uuid import uuid4
 
+from sqlalchemy import literal
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,8 +71,12 @@ class ChunkBatchWriterImpl(
         *,
         ingestion_job_id: UUID,
         document_id: UUID,
-        chunks: list[Chunk],
+        chunks: Iterable[Chunk],
     ) -> ChunkBatch:
+
+        await self._lock_document_batches(
+            document_id,
+        )
 
         existing_batch = (
             await self.get_by_job_and_document(
@@ -96,9 +102,7 @@ class ChunkBatchWriterImpl(
                     document_id,
                 )
             ),
-            total_chunks=len(
-                chunks,
-            ),
+            total_chunks=0,
             classification_completed=False,
             embedding_completed=False,
             batch_completed=False,
@@ -110,8 +114,10 @@ class ChunkBatchWriterImpl(
             batch_model,
         )
 
-        self.session.add_all(
-            [
+        total_chunks = 0
+
+        for chunk in chunks:
+            self.session.add(
                 DocumentChunkModel(
                     id=None,
                     batch_id=batch_id,
@@ -125,14 +131,38 @@ class ChunkBatchWriterImpl(
                     ),
                     created_at=now,
                 )
-                for chunk in chunks
-            ]
-        )
+            )
+
+            total_chunks += 1
+
+        batch_model.total_chunks = total_chunks
 
         await self.session.flush()
 
         return ChunkBatchMapper.to_entity(
             batch_model,
+        )
+
+    async def _lock_document_batches(
+        self,
+        document_id: UUID,
+    ) -> None:
+
+        statement = select(
+            func.pg_advisory_xact_lock(
+                func.hashtextextended(
+                    literal(
+                        str(
+                            document_id,
+                        )
+                    ),
+                    0,
+                )
+            )
+        )
+
+        await self.session.execute(
+            statement,
         )
 
     async def _next_batch_index(

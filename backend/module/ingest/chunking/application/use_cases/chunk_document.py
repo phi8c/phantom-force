@@ -1,6 +1,8 @@
-import json
+import os
+import tempfile
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
 from uuid import UUID
 
 from module.ingest.chunking.domain.contracts.chunk_batch_writer import (
@@ -94,29 +96,38 @@ class ChunkDocumentUseCase:
                     )
                 )
 
-                extracted_content = (
-                    await self._read_json(
+                extracted_path = (
+                    await self._write_temp_file(
                         extracted_asset.content,
                     )
                 )
 
-                chunks = await self.chunking_engine.chunk(
-                    ExtractedDocument(
-                        document_id=task.document_id,
-                        content=extracted_content,
+                try:
+                    chunks = self.chunking_engine.chunk(
+                        ExtractedDocument(
+                            document_id=task.document_id,
+                            content_path=extracted_path,
+                        )
                     )
-                )
 
-                batch = (
-                    await self.chunk_batch_writer
-                    .create_with_chunks(
-                        ingestion_job_id=(
-                            task.ingestion_job_id
-                        ),
-                        document_id=task.document_id,
-                        chunks=chunks,
+                    batch = await (
+                        self.chunk_batch_writer
+                        .create_with_chunks(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            chunks=chunks,
+                        )
                     )
-                )
+
+                finally:
+                    try:
+                        os.unlink(
+                            extracted_path,
+                        )
+                    except FileNotFoundError:
+                        pass
 
             else:
                 batch = existing_batch
@@ -191,21 +202,33 @@ class ChunkDocumentUseCase:
             raise
 
     @staticmethod
-    async def _read_json(
+    async def _write_temp_file(
         content,
-    ) -> dict:
+    ) -> Path:
 
-        chunks: list[bytes] = []
-
-        async for chunk in content:
-            chunks.append(
-                chunk,
-            )
-
-        return json.loads(
-            b"".join(
-                chunks
-            ).decode(
-                "utf-8"
-            )
+        temp_file = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".json",
         )
+
+        temp_path = Path(
+            temp_file.name,
+        )
+
+        try:
+            with temp_file:
+                async for chunk in content:
+                    temp_file.write(
+                        chunk,
+                    )
+
+        except Exception:
+            try:
+                os.unlink(
+                    temp_path,
+                )
+            except FileNotFoundError:
+                pass
+            raise
+
+        return temp_path

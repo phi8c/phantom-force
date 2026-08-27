@@ -1,6 +1,8 @@
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -8,7 +10,7 @@ from uuid import UUID
 @dataclass(frozen=True)
 class ExtractedDocument:
     document_id: UUID
-    content: dict[str, Any]
+    content_path: Path
 
 
 @dataclass(frozen=True)
@@ -22,8 +24,8 @@ class Chunk:
 class ChunkingEngine(ABC):
 
     @abstractmethod
-    async def chunk(
+    def chunk(
         self,
         document: ExtractedDocument,
-    ) -> list[Chunk]:
+    ) -> Iterable[Chunk]:
         pass

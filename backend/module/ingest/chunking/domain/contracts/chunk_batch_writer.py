@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -33,6 +34,6 @@ class ChunkBatchWriter(ABC):
         *,
         ingestion_job_id: UUID,
         document_id: UUID,
-        chunks: list[Chunk],
+        chunks: Iterable[Chunk],
     ) -> ChunkBatch:
         pass

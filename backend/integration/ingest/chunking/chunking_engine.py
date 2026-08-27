@@ -1,3 +1,6 @@
+import json
+from collections.abc import Iterable
+
 from module.ingest.chunking.domain.contracts.chunking_engine import (
     Chunk,
     ChunkingEngine,
@@ -32,21 +35,29 @@ class LegacyChunkingEngineAdapter(
             )
         )
 
-    async def chunk(
+    def chunk(
         self,
         document: ExtractedDocument,
-    ) -> list[Chunk]:
+    ) -> Iterable[Chunk]:
+
+        with document.content_path.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
+            content = json.load(
+                file,
+            )
 
         extraction = DocumentExtraction(
             id=None,
             document_id=document.document_id,
-            structured_content=document.content,
+            structured_content=content,
             page_count=(
-                document.content.get(
+                content.get(
                     "page_count"
                 )
                 if isinstance(
-                    document.content,
+                    content,
                     dict,
                 )
                 else None
@@ -54,14 +65,10 @@ class LegacyChunkingEngineAdapter(
             created_at=None,
         )
 
-        chunks = list(
-            self._engine.chunk(
-                extraction,
-            )
-        )
-
-        return [
-            Chunk(
+        for chunk in self._engine.chunk(
+            extraction,
+        ):
+            yield Chunk(
                 index=chunk.sequence,
                 title=chunk.title,
                 content=chunk.content,
@@ -83,5 +90,3 @@ class LegacyChunkingEngineAdapter(
                     ),
                 },
             )
-            for chunk in chunks
-        ]

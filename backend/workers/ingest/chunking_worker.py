@@ -1,10 +1,16 @@
 import asyncio
 import json
 import socket
+from collections.abc import AsyncContextManager
+from collections.abc import Callable
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from uuid import UUID
+
+from module.ingest.chunking.application.use_cases.chunk_document import (
+    ChunkDocumentUseCase,
+)
 
 
 class ChunkingWorker:
@@ -13,7 +19,12 @@ class ChunkingWorker:
         self,
         queue_client,
         task_repository,
-        use_case,
+        use_case_factory: Callable[
+            [],
+            AsyncContextManager[
+                ChunkDocumentUseCase
+            ],
+        ],
         uow,
         claim_size: int = 20,
         lease_seconds: int = 300,
@@ -21,7 +32,7 @@ class ChunkingWorker:
     ):
         self.queue_client = queue_client
         self.task_repository = task_repository
-        self.use_case = use_case
+        self.use_case_factory = use_case_factory
         self.uow = uow
         self.claim_size = claim_size
         self.lease_seconds = lease_seconds
@@ -114,6 +125,7 @@ class ChunkingWorker:
     ) -> None:
 
         async with self.semaphore:
-            await self.use_case.execute(
-                task_id,
-            )
+            async with self.use_case_factory() as use_case:
+                await use_case.execute(
+                    task_id,
+                )

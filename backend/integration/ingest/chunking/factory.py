@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.chunking.application.use_cases.chunk_document import (
@@ -60,3 +63,23 @@ def create_chunk_document_use_case(
         uow=uow,
         max_attempts=max_attempts,
     )
+
+
+@asynccontextmanager
+async def create_chunk_document_use_case_scope(
+    *,
+    session_factory,
+    file_storage,
+    downstream_task_scheduler: DownstreamTaskScheduler,
+    max_attempts: int = 3,
+) -> AsyncIterator[ChunkDocumentUseCase]:
+
+    async with session_factory() as session:
+        yield create_chunk_document_use_case(
+            session=session,
+            file_storage=file_storage,
+            downstream_task_scheduler=(
+                downstream_task_scheduler
+            ),
+            max_attempts=max_attempts,
+        )
