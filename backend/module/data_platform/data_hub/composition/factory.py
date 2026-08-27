@@ -1,43 +1,55 @@
 from __future__ import annotations
 
-from module.data_platform.common.microsoft_graph.client import (
-    MicrosoftGraphClient,
-)
 from module.data_platform.common.microsoft_graph.authentication.token_provider import (
     TokenProvider,
 )
-from module.data_platform.data_hub.api import DataHub
+
+from module.data_platform.data_hub.api import (
+    DataHub,
+)
+
 from module.data_platform.data_hub.application.services.data_hub_service import (
     DataHubService,
 )
+
 from module.data_platform.data_hub.application.use_cases.discovery_files import (
     DiscoverFilesUseCase,
 )
+
 from module.data_platform.data_hub.application.use_cases.download_file import (
     DownloadFileUseCase,
 )
-from module.data_platform.data_hub.infrastructure.providers.sharepoint.provider import (
-    SharePointProvider,
+
+from module.data_platform.data_hub.composition.provider_resolver import (
+    DataHubProviderResolver,
 )
 
 
 def create_data_hub(
     token_provider: TokenProvider,
+    provider: str = "sharepoint",
+    configuration: dict | None = None,
 ) -> DataHub:
-    graph_client = MicrosoftGraphClient(
+
+    resolver = DataHubProviderResolver(
         token_provider=token_provider,
     )
 
-    sharepoint_provider = SharePointProvider(
-        graph_client=graph_client,
+    data_hub_provider = resolver.resolve(
+        provider=provider,
+        configuration=configuration,
     )
 
     discover_files = DiscoverFilesUseCase(
-        discovery_provider=sharepoint_provider.discovery,
+        discovery_provider=(
+            data_hub_provider.discovery
+        ),
     )
 
     download_file = DownloadFileUseCase(
-        file_downloader=sharepoint_provider.downloader,
+        file_downloader=(
+            data_hub_provider.downloader
+        ),
     )
 
     service = DataHubService(

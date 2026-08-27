@@ -1,6 +1,7 @@
 from module.data_platform.file_storage.domain.contracts.file_storage import (
     FileStorage,
 )
+from collections.abc import AsyncIterator
 
 
 class FileStorageService:
@@ -40,4 +41,17 @@ class FileStorageService:
 
         await self._storage.delete(
             path=path,
+        )
+        
+    async def upload_stream(
+        self,
+        path: str,
+        content: AsyncIterator[bytes],
+        content_type: str | None = None,
+    ) -> str:
+
+        return await self._storage.upload_stream(
+            path=path,
+            content=content,
+            content_type=content_type,
         )

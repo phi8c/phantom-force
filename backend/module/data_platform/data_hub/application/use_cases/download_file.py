@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ...domain.contracts.file_downloader import FileDownloader
 from ...domain.entities.discovered_file import DiscoveredFile
+from collections.abc import AsyncIterator
 
 
 class DownloadFileUseCase:
@@ -14,5 +15,9 @@ class DownloadFileUseCase:
     async def execute(
         self,
         file: DiscoveredFile,
-    ) -> bytes:
-        return await self._file_downloader.download(file)
+    ) -> AsyncIterator[bytes]:
+
+        async for chunk in self._file_downloader.download_stream(
+            file
+        ):
+            yield chunk

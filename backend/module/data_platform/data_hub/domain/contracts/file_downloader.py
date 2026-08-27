@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from collections.abc import AsyncIterator
 from ..entities.discovered_file import DiscoveredFile
 
 
@@ -18,4 +19,11 @@ class FileDownloader(ABC):
         """
         Download the content represented by a discovered file.
         """
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def download_stream(
+        self,
+        file: DiscoveredFile,
+    ) -> AsyncIterator[bytes]:
         raise NotImplementedError

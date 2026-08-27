@@ -11,6 +11,7 @@ from module.data_platform.data_hub.domain.entities.discovered_file import (
 from module.data_platform.data_hub.domain.value_objects.source_reference import (
     SourceReference,
 )
+from collections.abc import AsyncIterator
 
 
 class DataHub:
@@ -39,3 +40,22 @@ class DataHub:
         file: DiscoveredFile,
     ) -> bytes:
         return await self._service.download_file(file)
+    
+    async def download_stream(
+        self,
+        file: DiscoveredFile,
+    ) -> AsyncIterator[bytes]:
+
+        async for chunk in self._service.download_stream(
+            file
+        ):
+            yield chunk
+            
+    @abstractmethod
+    async def upload_stream(
+        self,
+        path: str,
+        content: AsyncIterator[bytes],
+        content_type: str | None = None,
+    ) -> str:
+        ...

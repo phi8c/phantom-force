@@ -29,3 +29,14 @@ class DataHubService:
         file: DiscoveredFile,
     ) -> bytes:
         return await self._download_file.execute(file)
+    
+    
+    async def download_stream(
+        self,
+        file: DiscoveredFile,
+    ) -> AsyncIterator[bytes]:
+
+        async for chunk in self._download_file.execute(
+            file
+        ):
+            yield chunk

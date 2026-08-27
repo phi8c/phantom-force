@@ -1,3 +1,11 @@
+from module.data_platform.data_hub.domain.value_objects.source_reference import (
+    SourceReference,
+)
+
+from module.ingest.config.domain.contracts.ingestion_config_repository import (
+    IngestionConfigRepository,
+)
+
 from module.ingest.discovery.application.dtos.requests.discover_batch_request import (
     DiscoverBatchRequest,
 )
@@ -5,6 +13,18 @@ from module.ingest.discovery.application.dtos.requests.discover_batch_request im
 from module.ingest.discovery.application.dtos.responses.discover_batch_response import (
     DiscoverBatchResponse,
     DiscoveryItem,
+)
+
+from module.ingest.discovery.domain.contracts.document_repository import (
+    DocumentRepository,
+)
+
+from module.ingest.discovery.domain.contracts.ingestion_discovery_state_repository import (
+    IngestionDiscoveryStateRepository,
+)
+
+from module.ingest.discovery.domain.contracts.ingestion_document_state_repository import (
+    IngestionDocumentStateRepository,
 )
 
 from module.ingest.discovery.domain.entities.document import (
@@ -19,25 +39,45 @@ from module.ingest.discovery.domain.enums.ingestion_document_status import (
     IngestionDocumentStatus,
 )
 
+from module.knowledge_space.domain.contracts.knowledge_space_data_hub_repository import (
+    KnowledgeSpaceDataHubRepository,
+)
+
+from module.master_data.data_hub_providers.domain.contracts.data_hub_provider_repository import (
+    DataHubProviderRepository,
+)
+
 
 class DiscoverBatchUseCase:
 
     def __init__(
         self,
-        ingestion_job_reader,
-        data_hub_reader,
+        ingestion_config_repository: IngestionConfigRepository,
+        knowledge_space_data_hub_repository: KnowledgeSpaceDataHubRepository,
+        data_hub_provider_repository: DataHubProviderRepository,
+        document_repository: DocumentRepository,
+        ingestion_document_state_repository: IngestionDocumentStateRepository,
+        discovery_state_repository: IngestionDiscoveryStateRepository,
         provider_resolver,
-        document_repository,
-        ingestion_document_state_repository,
-        discovery_state_repository,
         download_dispatcher,
         uow,
     ):
-        self.ingestion_job_reader = ingestion_job_reader
-        self.data_hub_reader = data_hub_reader
-        self.provider_resolver = provider_resolver
+        self.ingestion_config_repository = (
+            ingestion_config_repository
+        )
 
-        self.document_repository = document_repository
+        self.knowledge_space_data_hub_repository = (
+            knowledge_space_data_hub_repository
+        )
+
+        self.data_hub_provider_repository = (
+            data_hub_provider_repository
+        )
+
+        self.document_repository = (
+            document_repository
+        )
+
         self.ingestion_document_state_repository = (
             ingestion_document_state_repository
         )
@@ -46,7 +86,14 @@ class DiscoverBatchUseCase:
             discovery_state_repository
         )
 
-        self.download_dispatcher = download_dispatcher
+        self.provider_resolver = (
+            provider_resolver
+        )
+
+        self.download_dispatcher = (
+            download_dispatcher
+        )
+
         self.uow = uow
 
     async def execute(
@@ -54,12 +101,20 @@ class DiscoverBatchUseCase:
         request: DiscoverBatchRequest,
     ) -> DiscoverBatchResponse:
 
-        # -------------------------------------------------
-        # 1. Load ingestion job
-        # -------------------------------------------------
+        if request.batch_size <= 0:
+            raise ValueError(
+                "batch_size must be greater than 0"
+            )
 
-        job = await self.ingestion_job_reader.get_by_id(
-            request.ingestion_job_id,
+        # =================================================
+        # 1. Load ingestion job
+        # =================================================
+
+        job = (
+            await self.ingestion_config_repository
+            .get_job_by_id(
+                request.ingestion_job_id,
+            )
         )
 
         if job is None:
@@ -67,27 +122,57 @@ class DiscoverBatchUseCase:
                 "Ingestion job not found"
             )
 
-        if job.knowledge_space_id is None:
-            raise ValueError(
-                "Ingestion job has no knowledge space"
+        # =================================================
+        # 2. Resolve Knowledge Space Data Hub
+        # =================================================
+
+        data_hub = (
+            await self.knowledge_space_data_hub_repository
+            .get_by_knowledge_space_id(
+                job.knowledge_space_id,
             )
-
-        # -------------------------------------------------
-        # 2. Resolve Data Hub của Knowledge Space
-        # -------------------------------------------------
-
-        data_hub = await self.data_hub_reader.get_enabled_by_knowledge_space(
-            job.knowledge_space_id,
         )
 
         if data_hub is None:
             raise ValueError(
-                "No enabled Data Hub found for knowledge space"
+                "Data Hub is not configured "
+                "for this knowledge space"
             )
 
-        # -------------------------------------------------
-        # 3. Load discovery checkpoint
-        # -------------------------------------------------
+        if not data_hub.enabled:
+            raise ValueError(
+                "Data Hub is disabled"
+            )
+
+        if data_hub.id is None:
+            raise ValueError(
+                "Data Hub id is required"
+            )
+
+        # =================================================
+        # 3. Resolve Data Hub provider master data
+        # =================================================
+
+        provider_config = (
+            await self.data_hub_provider_repository
+            .get_by_id(
+                data_hub.data_hub_provider_id,
+            )
+        )
+
+        if provider_config is None:
+            raise ValueError(
+                "Data Hub provider not found"
+            )
+
+        if not provider_config.enabled:
+            raise ValueError(
+                "Data Hub provider is disabled"
+            )
+
+        # =================================================
+        # 4. Load discovery checkpoint
+        # =================================================
 
         discovery_state = (
             await self.discovery_state_repository
@@ -101,7 +186,9 @@ class DiscoverBatchUseCase:
             and discovery_state.completed
         ):
             return DiscoverBatchResponse(
-                ingestion_job_id=request.ingestion_job_id,
+                ingestion_job_id=(
+                    request.ingestion_job_id
+                ),
                 items=[],
                 has_more=False,
             )
@@ -112,44 +199,87 @@ class DiscoverBatchUseCase:
             else None
         )
 
-        # -------------------------------------------------
-        # 4. Resolve provider
-        # -------------------------------------------------
+        # =================================================
+        # 5. Build provider-neutral SourceReference
+        # =================================================
 
-        provider = self.provider_resolver.resolve(
-            provider_code=data_hub.provider_code,
-            configuration=data_hub.configuration,
+        source_metadata = dict(
+            data_hub.configuration
+            or {}
         )
 
-        # -------------------------------------------------
-        # 5. Discovery một page/batch
-        # -------------------------------------------------
+        # scope_data chỉ bổ sung/override phạm vi
+        # của ingestion job.
+        #
+        # Discovery core không hiểu site_id,
+        # folder_id, bucket, prefix...
+        if job.scope_data:
+            source_metadata.update(
+                job.scope_data
+            )
+
+        source = SourceReference(
+            provider=provider_config.provider,
+            identifier=str(data_hub.id),
+            metadata=source_metadata,
+        )
+
+        # =================================================
+        # 6. Resolve actual provider
+        # =================================================
+
+        provider = (
+            self.provider_resolver.resolve(
+                provider=provider_config.provider,
+                configuration=(
+                    data_hub.configuration
+                ),
+            )
+        )
+
+        # =================================================
+        # 7. Discover exactly one batch/page
+        # =================================================
 
         page = await provider.discovery.discover(
-            scope_type=job.scope_type,
-            scope_data=job.scope_data,
+            source=source,
             cursor=cursor,
             limit=request.batch_size,
         )
 
-        discovered_files = page.items
+        discovered_files = (
+            page.items
+        )
 
+        # Provider có thể move cursor nhưng batch này
+        # không có file, ví dụ chỉ gặp folder.
         if not discovered_files:
-            await self.discovery_state_repository.complete(
-                ingestion_job_id=request.ingestion_job_id,
+
+            await (
+                self.discovery_state_repository
+                .save_progress(
+                    ingestion_job_id=(
+                        request.ingestion_job_id
+                    ),
+                    cursor=page.next_cursor,
+                    discovered_count=0,
+                    completed=not page.has_more,
+                )
             )
 
             await self.uow.commit()
 
             return DiscoverBatchResponse(
-                ingestion_job_id=request.ingestion_job_id,
+                ingestion_job_id=(
+                    request.ingestion_job_id
+                ),
                 items=[],
-                has_more=False,
+                has_more=page.has_more,
             )
 
-        # -------------------------------------------------
-        # 6. Query documents hiện có theo batch
-        # -------------------------------------------------
+        # =================================================
+        # 8. Bulk load existing documents
+        # =================================================
 
         external_file_ids = [
             item.external_file_id
@@ -160,21 +290,30 @@ class DiscoverBatchUseCase:
             await self.document_repository
             .get_by_external_file_ids(
                 data_hub_id=data_hub.id,
-                external_file_ids=external_file_ids,
+                external_file_ids=(
+                    external_file_ids
+                ),
             )
         )
 
-        result_items: list[DiscoveryItem] = []
-        document_ids_to_dispatch = []
+        result_items: list[
+            DiscoveryItem
+        ] = []
 
-        # -------------------------------------------------
-        # 7. Upsert documents + ingestion states
-        # -------------------------------------------------
+        states_to_dispatch: list[
+            IngestionDocumentState
+        ] = []
+
+        # =================================================
+        # 9. Upsert Documents + per-job state
+        # =================================================
 
         for discovered_file in discovered_files:
 
-            document = existing_documents.get(
-                discovered_file.external_file_id,
+            document = (
+                existing_documents.get(
+                    discovered_file.external_file_id
+                )
             )
 
             if document is None:
@@ -185,7 +324,9 @@ class DiscoverBatchUseCase:
                     external_file_id=(
                         discovered_file.external_file_id
                     ),
-                    file_name=discovered_file.file_name,
+                    file_name=(
+                        discovered_file.file_name
+                    ),
                     provider_metadata=dict(
                         discovered_file.provider_metadata
                         or {}
@@ -213,12 +354,15 @@ class DiscoverBatchUseCase:
                     updated_at=None,
                 )
 
-                document = await self.document_repository.create(
-                    document,
+                document = (
+                    await self.document_repository
+                    .create(
+                        document,
+                    )
                 )
 
             else:
-                # Metadata của provider có thể thay đổi
+
                 document.file_name = (
                     discovered_file.file_name
                 )
@@ -252,15 +396,22 @@ class DiscoverBatchUseCase:
                     document,
                 )
 
+            if document.id is None:
+                raise ValueError(
+                    "Document id was not generated"
+                )
+
             # ---------------------------------------------
-            # State của document trong ingestion job này
+            # State của document trong ingestion job
             # ---------------------------------------------
 
             state = (
                 await self.ingestion_document_state_repository
                 .get_by_document_and_ingestion_job(
                     document_id=document.id,
-                    ingestion_job_id=request.ingestion_job_id,
+                    ingestion_job_id=(
+                        request.ingestion_job_id
+                    ),
                 )
             )
 
@@ -268,58 +419,110 @@ class DiscoverBatchUseCase:
 
                 state = IngestionDocumentState(
                     document_id=document.id,
-                    ingestion_job_id=request.ingestion_job_id,
-                    status=IngestionDocumentStatus.PENDING,
+                    ingestion_job_id=(
+                        request.ingestion_job_id
+                    ),
+                    status=(
+                        IngestionDocumentStatus.PENDING
+                    ),
                     created_at=None,
                     updated_at=None,
                 )
 
-                await self.ingestion_document_state_repository.create(
-                    state,
+                state = (
+                    await self.ingestion_document_state_repository
+                    .create(
+                        state,
+                    )
                 )
 
-                document_ids_to_dispatch.append(
-                    document.id,
+            # PENDING nghĩa là chưa đảm bảo đã được
+            # đưa sang Download queue.
+            #
+            # Nếu lần trước DB commit thành công nhưng
+            # publish queue fail, retry sẽ publish lại.
+            if (
+                state.status
+                == IngestionDocumentStatus.PENDING
+            ):
+                states_to_dispatch.append(
+                    state
                 )
 
             result_items.append(
                 DiscoveryItem(
                     document_id=document.id,
                     external_file_id=(
-                        discovered_file.external_file_id
+                        document.external_file_id
                     ),
                     file_name=(
-                        discovered_file.file_name
+                        document.file_name
                     ),
                 )
             )
 
-        # -------------------------------------------------
-        # 8. Save checkpoint
-        # -------------------------------------------------
+        # =================================================
+        # 10. Save Discovery checkpoint
+        # =================================================
 
-        await self.discovery_state_repository.save_progress(
-            ingestion_job_id=request.ingestion_job_id,
-            cursor=page.next_cursor,
-            discovered_count=len(discovered_files),
-            completed=not page.has_more,
+        await (
+            self.discovery_state_repository
+            .save_progress(
+                ingestion_job_id=(
+                    request.ingestion_job_id
+                ),
+                cursor=page.next_cursor,
+                discovered_count=len(
+                    discovered_files
+                ),
+                completed=not page.has_more,
+            )
         )
 
-        # DB trước
+        # Documents + state + checkpoint phải tồn tại
+        # trước khi Download worker nhìn thấy message.
         await self.uow.commit()
 
-        # -------------------------------------------------
-        # 9. Dispatch Download
-        # -------------------------------------------------
+        # =================================================
+        # 11. Dispatch Download work
+        # =================================================
 
-        for document_id in document_ids_to_dispatch:
+        for state in states_to_dispatch:
+
             await self.download_dispatcher.dispatch(
-                ingestion_job_id=request.ingestion_job_id,
-                document_id=document_id,
+                ingestion_job_id=(
+                    request.ingestion_job_id
+                ),
+                document_id=state.document_id,
             )
 
+            # Nếu publish thành công thì mark QUEUED.
+            #
+            # Nếu process chết trước commit cuối,
+            # retry có thể publish duplicate.
+            # Downstream phải idempotent.
+            state.status = (
+                IngestionDocumentStatus.QUEUED
+            )
+
+            await (
+                self.ingestion_document_state_repository
+                .update(
+                    state,
+                )
+            )
+
+        if states_to_dispatch:
+            await self.uow.commit()
+
+        # =================================================
+        # 12. Return this batch
+        # =================================================
+
         return DiscoverBatchResponse(
-            ingestion_job_id=request.ingestion_job_id,
+            ingestion_job_id=(
+                request.ingestion_job_id
+            ),
             items=result_items,
             has_more=page.has_more,
         )
