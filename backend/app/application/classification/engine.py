@@ -83,7 +83,7 @@ class ClassificationEngine:
             max_allowed_tokens,
         ):
             results.extend(
-                self._classify_single_batch(
+                await self._classify_single_batch(
                     sub_batch,
                 )
             )
