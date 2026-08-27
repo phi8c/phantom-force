@@ -1,8 +1,6 @@
 import json
 from uuid import UUID
 
-from azure.storage.queue.aio import QueueClient
-
 from module.ingest.download.domain.contracts.download_dispatcher import (
     DownloadDispatcher,
 )
@@ -14,7 +12,7 @@ class AzureDownloadDispatcher(
 
     def __init__(
         self,
-        queue_client: QueueClient,
+        queue_client,
     ):
         self.queue_client = queue_client
 

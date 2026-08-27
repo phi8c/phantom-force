@@ -1,9 +1,14 @@
 import asyncio
 import json
+from collections.abc import AsyncContextManager
+from collections.abc import Callable
 from uuid import UUID
 
 from module.ingest.discovery.application.dtos.requests.discover_batch_request import (
     DiscoverBatchRequest,
+)
+from module.ingest.discovery.application.use_cases.discover_batch import (
+    DiscoverBatchUseCase,
 )
 
 
@@ -12,11 +17,16 @@ class DiscoveryWorker:
     def __init__(
         self,
         queue_client,
-        use_case,
+        use_case_factory: Callable[
+            [],
+            AsyncContextManager[
+                DiscoverBatchUseCase
+            ],
+        ],
         discovery_dispatcher,
     ):
         self.queue_client = queue_client
-        self.use_case = use_case
+        self.use_case_factory = use_case_factory
         self.discovery_dispatcher = (
             discovery_dispatcher
         )
@@ -54,11 +64,14 @@ class DiscoveryWorker:
                         ),
                     )
 
-                    response = (
-                        await self.use_case.execute(
-                            request
+                    async with (
+                        self.use_case_factory()
+                    ) as use_case:
+                        response = (
+                            await use_case.execute(
+                                request
+                            )
                         )
-                    )
 
                     # còn Discovery workload
                     if response.has_more:

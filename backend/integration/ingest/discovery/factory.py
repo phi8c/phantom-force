@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.data_platform.data_hub.composition.provider_resolver import (
@@ -124,3 +127,21 @@ def create_discover_batch_use_case(
         ),
         uow=uow,
     )
+
+
+@asynccontextmanager
+async def create_discover_batch_use_case_scope(
+    *,
+    session_factory,
+    data_hub_provider_resolver: DataHubProviderResolver,
+    download_dispatcher: DownloadDispatcher,
+) -> AsyncIterator[DiscoverBatchUseCase]:
+
+    async with session_factory() as session:
+        yield create_discover_batch_use_case(
+            session=session,
+            data_hub_provider_resolver=(
+                data_hub_provider_resolver
+            ),
+            download_dispatcher=download_dispatcher,
+        )

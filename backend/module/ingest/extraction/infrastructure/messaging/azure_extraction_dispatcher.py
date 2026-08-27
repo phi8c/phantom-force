@@ -1,8 +1,6 @@
 import json
 from uuid import UUID
 
-from azure.storage.queue.aio import QueueClient
-
 from module.ingest.extraction.domain.contracts.extraction_dispatcher import (
     ExtractionDispatcher,
 )
@@ -14,7 +12,7 @@ class AzureExtractionDispatcher(
 
     def __init__(
         self,
-        queue_client: QueueClient,
+        queue_client,
     ):
         self.queue_client = queue_client
 

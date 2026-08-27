@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from module.ingest.chunking.infrastructure.persistence.repositories.chunking_task_repository_impl import (
     ChunkingTaskRepositoryImpl,
 )
@@ -34,12 +37,14 @@ from workers.ingest.classification_worker import (
     ClassificationWorker,
 )
 from workers.ingest.download_worker import DownloadWorker
+from workers.ingest.discovery_worker import DiscoveryWorker
 from workers.ingest.embedding_worker import EmbeddingWorker
 from workers.ingest.extraction_worker import ExtractionWorker
 
 from bootstrap.database import async_session_factory
 from bootstrap.modules import chunking_use_case_scope
 from bootstrap.modules import classification_use_case_scope
+from bootstrap.modules import discovery_use_case_scope
 from bootstrap.modules import download_use_case_scope
 from bootstrap.modules import embedding_use_case_scope
 from bootstrap.modules import extraction_use_case_scope
@@ -47,8 +52,108 @@ from bootstrap.queues import IngestQueueClients
 from bootstrap.queues import IngestDispatchers
 
 
-def _claim_session():
-    return async_session_factory()
+@asynccontextmanager
+async def _download_claim_scope() -> AsyncIterator[tuple]:
+    async with async_session_factory() as session:
+        try:
+            yield (
+                DownloadTaskRepositoryImpl(
+                    session=session,
+                ),
+                DownloadUnitOfWork(
+                    session=session,
+                ),
+            )
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def _extraction_claim_scope() -> AsyncIterator[tuple]:
+    async with async_session_factory() as session:
+        try:
+            yield (
+                ExtractionTaskRepositoryImpl(
+                    session=session,
+                ),
+                ExtractionUnitOfWork(
+                    session=session,
+                ),
+            )
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def _chunking_claim_scope() -> AsyncIterator[tuple]:
+    async with async_session_factory() as session:
+        try:
+            yield (
+                ChunkingTaskRepositoryImpl(
+                    session=session,
+                ),
+                ChunkingUnitOfWork(
+                    session=session,
+                ),
+            )
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def _embedding_claim_scope() -> AsyncIterator[tuple]:
+    async with async_session_factory() as session:
+        try:
+            yield (
+                EmbeddingTaskRepositoryImpl(
+                    session=session,
+                ),
+                EmbeddingUnitOfWork(
+                    session=session,
+                ),
+            )
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def _classification_claim_scope() -> AsyncIterator[tuple]:
+    async with async_session_factory() as session:
+        try:
+            yield (
+                ClassificationTaskRepositoryImpl(
+                    session=session,
+                ),
+                ClassificationUnitOfWork(
+                    session=session,
+                ),
+            )
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def create_discovery_worker(
+    *,
+    queues: IngestQueueClients,
+    dispatchers: IngestDispatchers,
+    data_hub_provider_resolver,
+) -> DiscoveryWorker:
+
+    return DiscoveryWorker(
+        queue_client=queues.discovery,
+        use_case_factory=lambda: discovery_use_case_scope(
+            data_hub_provider_resolver=(
+                data_hub_provider_resolver
+            ),
+            download_dispatcher=dispatchers.download,
+        ),
+        discovery_dispatcher=dispatchers.discovery,
+    )
 
 
 def create_download_worker(
@@ -59,22 +164,15 @@ def create_download_worker(
     object_storage,
 ) -> DownloadWorker:
 
-    session = _claim_session()
-
     return DownloadWorker(
         queue_client=queues.download,
-        task_repository=DownloadTaskRepositoryImpl(
-            session=session,
-        ),
+        claim_scope_factory=_download_claim_scope,
         use_case_factory=lambda: download_use_case_scope(
             document_source=document_source,
             object_storage=object_storage,
             extraction_dispatcher=(
                 dispatchers.extraction
             ),
-        ),
-        uow=DownloadUnitOfWork(
-            session=session,
         ),
     )
 
@@ -87,20 +185,13 @@ def create_extraction_worker(
     object_storage,
 ) -> ExtractionWorker:
 
-    session = _claim_session()
-
     return ExtractionWorker(
         queue_client=queues.extraction,
-        task_repository=ExtractionTaskRepositoryImpl(
-            session=session,
-        ),
+        claim_scope_factory=_extraction_claim_scope,
         use_case_factory=lambda: extraction_use_case_scope(
             file_storage=file_storage,
             object_storage=object_storage,
             chunking_dispatcher=dispatchers.chunking,
-        ),
-        uow=ExtractionUnitOfWork(
-            session=session,
         ),
     )
 
@@ -112,13 +203,9 @@ def create_chunking_worker(
     file_storage,
 ) -> ChunkingWorker:
 
-    session = _claim_session()
-
     return ChunkingWorker(
         queue_client=queues.chunking,
-        task_repository=ChunkingTaskRepositoryImpl(
-            session=session,
-        ),
+        claim_scope_factory=_chunking_claim_scope,
         use_case_factory=lambda: chunking_use_case_scope(
             file_storage=file_storage,
             embedding_dispatcher=(
@@ -128,9 +215,6 @@ def create_chunking_worker(
                 dispatchers.classification
             ),
         ),
-        uow=ChunkingUnitOfWork(
-            session=session,
-        ),
     )
 
 
@@ -139,17 +223,10 @@ def create_embedding_worker(
     queues: IngestQueueClients,
 ) -> EmbeddingWorker:
 
-    session = _claim_session()
-
     return EmbeddingWorker(
         queue_client=queues.embedding,
-        task_repository=EmbeddingTaskRepositoryImpl(
-            session=session,
-        ),
+        claim_scope_factory=_embedding_claim_scope,
         use_case_factory=embedding_use_case_scope,
-        uow=EmbeddingUnitOfWork(
-            session=session,
-        ),
     )
 
 
@@ -158,15 +235,8 @@ def create_classification_worker(
     queues: IngestQueueClients,
 ) -> ClassificationWorker:
 
-    session = _claim_session()
-
     return ClassificationWorker(
         queue_client=queues.classification,
-        task_repository=ClassificationTaskRepositoryImpl(
-            session=session,
-        ),
+        claim_scope_factory=_classification_claim_scope,
         use_case_factory=classification_use_case_scope,
-        uow=ClassificationUnitOfWork(
-            session=session,
-        ),
     )

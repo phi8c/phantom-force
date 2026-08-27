@@ -18,22 +18,22 @@ class ClassificationWorker:
     def __init__(
         self,
         queue_client,
-        task_repository,
+        claim_scope_factory,
         use_case_factory: Callable[
             [],
             AsyncContextManager[
                 ClassifyBatchUseCase
             ],
         ],
-        uow,
         claim_size: int = 20,
         lease_seconds: int = 300,
         max_concurrency: int = 5,
     ):
         self.queue_client = queue_client
-        self.task_repository = task_repository
+        self.claim_scope_factory = (
+            claim_scope_factory
+        )
         self.use_case_factory = use_case_factory
-        self.uow = uow
         self.claim_size = claim_size
         self.lease_seconds = lease_seconds
         self.semaphore = asyncio.Semaphore(
@@ -79,19 +79,24 @@ class ClassificationWorker:
                         )
                     )
 
-                    tasks = (
-                        await self.task_repository
-                        .claim_ready(
-                            ingestion_job_id,
-                            limit=self.claim_size,
-                            claimed_by=(
-                                self.worker_id
-                            ),
-                            lease_until=lease_until,
-                        )
-                    )
+                    async with (
+                        self.claim_scope_factory()
+                    ) as claim_scope:
+                        task_repository, uow = claim_scope
 
-                    await self.uow.commit()
+                        tasks = (
+                            await task_repository
+                            .claim_ready(
+                                ingestion_job_id,
+                                limit=self.claim_size,
+                                claimed_by=(
+                                    self.worker_id
+                                ),
+                                lease_until=lease_until,
+                            )
+                        )
+
+                        await uow.commit()
 
                     await asyncio.gather(
                         *[
@@ -113,7 +118,6 @@ class ClassificationWorker:
                     )
 
                 except Exception:
-                    await self.uow.rollback()
                     continue
 
             if not found_message:

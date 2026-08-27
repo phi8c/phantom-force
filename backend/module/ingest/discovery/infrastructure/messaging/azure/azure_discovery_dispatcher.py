@@ -1,8 +1,6 @@
 import json
 from uuid import UUID
 
-from azure.storage.queue.aio import QueueClient
-
 from module.ingest.discovery.domain.contracts.discovery_dispatcher import (
     DiscoveryDispatcher,
 )
@@ -14,7 +12,7 @@ class AzureDiscoveryDispatcher(
 
     def __init__(
         self,
-        queue_client: QueueClient,
+        queue_client,
     ):
         self.queue_client = queue_client
 

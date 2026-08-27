@@ -4,6 +4,9 @@ from integration.ingest.chunking.factory import (
 from integration.ingest.classification.factory import (
     create_classify_batch_use_case_scope,
 )
+from integration.ingest.discovery.factory import (
+    create_discover_batch_use_case_scope,
+)
 from integration.ingest.download.factory import (
     create_download_file_use_case_scope,
 )
@@ -29,6 +32,21 @@ def download_use_case_scope(
         document_source=document_source,
         object_storage=object_storage,
         extraction_dispatcher=extraction_dispatcher,
+    )
+
+
+def discovery_use_case_scope(
+    *,
+    data_hub_provider_resolver,
+    download_dispatcher,
+):
+
+    return create_discover_batch_use_case_scope(
+        session_factory=async_session_factory,
+        data_hub_provider_resolver=(
+            data_hub_provider_resolver
+        ),
+        download_dispatcher=download_dispatcher,
     )
 
 
