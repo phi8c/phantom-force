@@ -1,9 +1,9 @@
 from typing import Any
 
-from app.application.classification.engine import (
+from module.ingest.classification.application.dtos.schemas.engine import (
     ClassificationEngine as LegacyClassificationEngine,
 )
-from app.application.classification.schemas import (
+from module.ingest.classification.application.dtos.schemas.schemas import (
     Chunk as LegacyChunk,
 )
 

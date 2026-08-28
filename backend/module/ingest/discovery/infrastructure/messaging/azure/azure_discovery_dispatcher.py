@@ -29,6 +29,10 @@ class AzureDiscoveryDispatcher(
             "batch_size": batch_size,
         }
 
-        await self.queue_client.send_message(
-            json.dumps(payload)
+        from azure.servicebus import ServiceBusMessage
+
+        await self.queue_client.send_messages(
+            ServiceBusMessage(
+                json.dumps(payload),
+            )
         )

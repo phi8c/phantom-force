@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncContextManager
+from typing import AsyncContextManager
 from collections.abc import Callable
 from uuid import UUID
 
@@ -37,17 +37,18 @@ class DiscoveryWorker:
 
         while True:
 
-            messages = (
+            messages = await (
                 self.queue_client.receive_messages(
-                    messages_per_page=1,
+                    max_message_count=1,
+                    max_wait_time=5,
                 )
             )
 
-            async for message in messages:
+            for message in messages:
 
                 try:
                     payload = json.loads(
-                        message.content
+                        str(message)
                     )
 
                     request = DiscoverBatchRequest(
@@ -89,9 +90,8 @@ class DiscoveryWorker:
 
                     await (
                         self.queue_client
-                        .delete_message(
-                            message.id,
-                            message.pop_receipt,
+                        .complete_message(
+                            message,
                         )
                     )
 
@@ -99,7 +99,7 @@ class DiscoveryWorker:
                     # Không delete message.
                     # Azure Queue sẽ visible lại
                     # sau visibility timeout.
-                    raise
+                    continue
 
             await asyncio.sleep(
                 1

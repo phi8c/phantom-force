@@ -1,7 +1,7 @@
 import asyncio
 import json
 import socket
-from collections.abc import AsyncContextManager
+from typing import AsyncContextManager
 from collections.abc import Callable
 from datetime import datetime
 from datetime import timedelta
@@ -46,20 +46,19 @@ class ClassificationWorker:
     ) -> None:
 
         while True:
-            messages = (
+            messages = await (
                 self.queue_client.receive_messages(
-                    messages_per_page=1,
+                    max_message_count=1,
+                    max_wait_time=5,
                 )
             )
 
-            found_message = False
+            found_message = bool(messages)
 
-            async for message in messages:
-                found_message = True
-
+            for message in messages:
                 try:
                     payload = json.loads(
-                        message.content
+                        str(message)
                     )
 
                     ingestion_job_id = UUID(
@@ -111,9 +110,8 @@ class ClassificationWorker:
 
                     await (
                         self.queue_client
-                        .delete_message(
-                            message.id,
-                            message.pop_receipt,
+                        .complete_message(
+                            message,
                         )
                     )
 

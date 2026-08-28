@@ -21,12 +21,16 @@ class AzureClassificationDispatcher(
         ingestion_job_id: UUID,
     ) -> None:
 
-        await self.queue_client.send_message(
-            json.dumps(
-                {
-                    "ingestion_job_id": str(
-                        ingestion_job_id,
-                    ),
-                }
+        from azure.servicebus import ServiceBusMessage
+
+        await self.queue_client.send_messages(
+            ServiceBusMessage(
+                json.dumps(
+                    {
+                        "ingestion_job_id": str(
+                            ingestion_job_id,
+                        ),
+                    }
+                )
             )
         )
