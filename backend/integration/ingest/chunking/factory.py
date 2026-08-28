@@ -37,8 +37,8 @@ from module.ingest.embedding.infrastructure.persistence.repositories.embedding_t
     EmbeddingTaskRepositoryImpl,
 )
 
-from integration.ingest.chunking.chunking_engine import (
-    LegacyChunkingEngineAdapter,
+from integration.ingest.chunking.chunking_engine_resolver import (
+    DbChunkingEngineResolver,
 )
 from integration.ingest.chunking.downstream_task_scheduler import (
     ModuleDownstreamTaskScheduler,
@@ -72,8 +72,10 @@ def create_chunk_document_use_case(
                 file_storage=file_storage,
             )
         ),
-        chunking_engine=(
-            LegacyChunkingEngineAdapter()
+        chunking_engine_resolver=(
+            DbChunkingEngineResolver(
+                session=session,
+            )
         ),
         chunk_batch_writer=ChunkBatchWriterImpl(
             session=session,

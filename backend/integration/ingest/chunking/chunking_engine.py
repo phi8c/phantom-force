@@ -9,6 +9,9 @@ from module.ingest.chunking.domain.contracts.chunking_engine import (
 from module.ingest.chunking.engine.chunking_engine import (
     ChunkingEngine as LegacyChunkingEngine,
 )
+from module.ingest.chunking.engine.contracts.chunk_strategy import (
+    ChunkStrategy,
+)
 from module.ingest.chunking.engine.models.document_extraction import (
     DocumentExtraction,
 )
@@ -24,14 +27,18 @@ class LegacyChunkingEngineAdapter(
     def __init__(
         self,
         engine: LegacyChunkingEngine | None = None,
+        strategy: ChunkStrategy | None = None,
     ):
         self._engine = (
             engine
             or LegacyChunkingEngine(
-                strategy=AutoChunkStrategy(
-                    level=2,
-                    max_chunk_tokens=800,
-                )
+                strategy=(
+                    strategy
+                    or AutoChunkStrategy(
+                        level=2,
+                        max_chunk_tokens=800,
+                    )
+                ),
             )
         )
 

@@ -9,8 +9,10 @@ from module.ingest.chunking.domain.contracts.chunk_batch_writer import (
     ChunkBatchWriter,
 )
 from module.ingest.chunking.domain.contracts.chunking_engine import (
-    ChunkingEngine,
     ExtractedDocument,
+)
+from module.ingest.chunking.domain.contracts.chunking_engine_resolver import (
+    ChunkingEngineResolver,
 )
 from module.ingest.chunking.domain.contracts.chunking_task_repository import (
     ChunkingTaskRepository,
@@ -35,7 +37,7 @@ class ChunkDocumentUseCase:
         self,
         task_repository: ChunkingTaskRepository,
         extracted_asset_reader: ExtractedAssetReader,
-        chunking_engine: ChunkingEngine,
+        chunking_engine_resolver: ChunkingEngineResolver,
         chunk_batch_writer: ChunkBatchWriter,
         downstream_task_scheduler: DownstreamTaskScheduler,
         uow: UnitOfWork,
@@ -45,7 +47,9 @@ class ChunkDocumentUseCase:
         self.extracted_asset_reader = (
             extracted_asset_reader
         )
-        self.chunking_engine = chunking_engine
+        self.chunking_engine_resolver = (
+            chunking_engine_resolver
+        )
         self.chunk_batch_writer = chunk_batch_writer
         self.downstream_task_scheduler = (
             downstream_task_scheduler
@@ -103,7 +107,14 @@ class ChunkDocumentUseCase:
                 )
 
                 try:
-                    chunks = self.chunking_engine.chunk(
+                    chunking_engine = (
+                        await self.chunking_engine_resolver
+                        .resolve_for_job(
+                            task.ingestion_job_id,
+                        )
+                    )
+
+                    chunks = chunking_engine.chunk(
                         ExtractedDocument(
                             document_id=task.document_id,
                             content_path=extracted_path,

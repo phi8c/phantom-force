@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,8 +60,10 @@ class ChunkingStrategyRepositoryImpl(
             select(
                 ChunkingStrategyModel,
             ).where(
-                ChunkingStrategyModel.code
-                == code,
+                func.upper(
+                    ChunkingStrategyModel.code,
+                )
+                == code.strip().upper(),
             )
         )
 

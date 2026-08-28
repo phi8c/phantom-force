@@ -84,10 +84,7 @@ class LegacyEmbeddingEngineAdapter(
         if self._deployment:
             return self._deployment
 
-        from shared.config.settings import settings
-
-        self._deployment = (
-            settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+        raise ValueError(
+            "Embedding deployment was not resolved "
+            "from database configuration"
         )
-
-        return self._deployment

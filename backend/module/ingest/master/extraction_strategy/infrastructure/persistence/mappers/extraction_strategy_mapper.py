@@ -2,7 +2,7 @@ from module.ingest.master.extraction_strategy.domain.entities.extraction_strateg
     ExtractionStrategy,
 )
 
-from module.ingest.master   .extraction_strategy.infrastructure.persistence.models.extraction_strategy_model import (
+from module.ingest.master.extraction_strategy.infrastructure.persistence.models.extraction_strategy_model import (
     ExtractionStrategyModel,
 )
 

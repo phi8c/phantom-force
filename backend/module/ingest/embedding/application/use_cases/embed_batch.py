@@ -11,8 +11,8 @@ from module.ingest.embedding.domain.contracts.chunk_reader import (
 from module.ingest.embedding.domain.contracts.document_chunk_embedding_repository import (
     DocumentChunkEmbeddingRepository,
 )
-from module.ingest.embedding.domain.contracts.embedding_engine import (
-    EmbeddingEngine,
+from module.ingest.embedding.domain.contracts.embedding_engine_resolver import (
+    EmbeddingEngineResolver,
 )
 from module.ingest.embedding.domain.contracts.embedding_task_repository import (
     EmbeddingTaskRepository,
@@ -35,7 +35,7 @@ class EmbedBatchUseCase:
         *,
         task_repository: EmbeddingTaskRepository,
         chunk_reader: ChunkReader,
-        embedding_engine: EmbeddingEngine,
+        embedding_engine_resolver: EmbeddingEngineResolver,
         embedding_repository: DocumentChunkEmbeddingRepository,
         batch_finalizer: BatchFinalizer,
         uow: UnitOfWork,
@@ -43,7 +43,9 @@ class EmbedBatchUseCase:
     ):
         self.task_repository = task_repository
         self.chunk_reader = chunk_reader
-        self.embedding_engine = embedding_engine
+        self.embedding_engine_resolver = (
+            embedding_engine_resolver
+        )
         self.embedding_repository = embedding_repository
         self.batch_finalizer = batch_finalizer
         self.uow = uow
@@ -73,7 +75,14 @@ class EmbedBatchUseCase:
                 task.batch_id,
             )
 
-            results = await self.embedding_engine.embed_batch(
+            embedding_engine = (
+                await self.embedding_engine_resolver
+                .resolve_for_job(
+                    task.ingestion_job_id,
+                )
+            )
+
+            results = await embedding_engine.embed_batch(
                 chunks,
             )
 

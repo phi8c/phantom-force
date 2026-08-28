@@ -25,8 +25,8 @@ from module.ingest.extraction.infrastructure.persistence.sqlalchemy_unit_of_work
     SQLAlchemyUnitOfWork,
 )
 
-from integration.ingest.extraction.docling_extraction_engine import (
-    DoclingExtractionEngine,
+from integration.ingest.extraction.extraction_engine_resolver import (
+    DbExtractionEngineResolver,
 )
 from integration.ingest.extraction.source_asset_reader import (
     StorageSourceAssetReader,
@@ -67,7 +67,11 @@ def create_extract_document_use_case(
     return ExtractDocumentUseCase(
         task_repository=task_repository,
         source_asset_reader=source_asset_reader,
-        extraction_engine=DoclingExtractionEngine(),
+        extraction_engine_resolver=(
+            DbExtractionEngineResolver(
+                session=session,
+            )
+        ),
         object_storage=object_storage,
         storage_asset_repository=(
             storage_asset_repository

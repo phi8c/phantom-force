@@ -22,8 +22,8 @@ from integration.ingest.embedding.batch_finalizer import (
 from integration.ingest.embedding.chunk_reader import (
     ModuleChunkReader,
 )
-from integration.ingest.embedding.legacy_embedding_engine import (
-    LegacyEmbeddingEngineAdapter,
+from integration.ingest.embedding.embedding_engine_resolver import (
+    DbEmbeddingEngineResolver,
 )
 
 
@@ -40,7 +40,11 @@ def create_embed_batch_use_case(
         chunk_reader=ModuleChunkReader(
             session=session,
         ),
-        embedding_engine=LegacyEmbeddingEngineAdapter(),
+        embedding_engine_resolver=(
+            DbEmbeddingEngineResolver(
+                session=session,
+            )
+        ),
         embedding_repository=(
             DocumentChunkEmbeddingRepositoryImpl(
                 session=session,

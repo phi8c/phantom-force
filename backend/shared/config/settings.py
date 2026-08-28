@@ -68,7 +68,11 @@ class Settings(BaseSettings):
     
     
     class Config:
-        env_file = ".env"
+        env_file = (
+            ".env",
+            "backend/.env",
+        )
+        extra = "ignore"
 
 
 settings = Settings()

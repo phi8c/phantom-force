@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,8 +60,10 @@ class ExtractionStrategyRepositoryImpl(
             select(
                 ExtractionStrategyModel,
             ).where(
-                ExtractionStrategyModel.code
-                == code,
+                func.upper(
+                    ExtractionStrategyModel.code,
+                )
+                == code.strip().upper(),
             )
         )
 

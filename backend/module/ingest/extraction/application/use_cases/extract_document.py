@@ -9,8 +9,8 @@ from uuid import UUID
 from module.ingest.extraction.domain.contracts.chunking_task_scheduler import (
     ChunkingTaskScheduler,
 )
-from module.ingest.extraction.domain.contracts.extraction_engine import (
-    ExtractionEngine,
+from module.ingest.extraction.domain.contracts.extraction_engine_resolver import (
+    ExtractionEngineResolver,
 )
 from module.ingest.extraction.domain.contracts.extraction_task_repository import (
     ExtractionTaskRepository,
@@ -39,7 +39,7 @@ class ExtractDocumentUseCase:
         self,
         task_repository: ExtractionTaskRepository,
         source_asset_reader: SourceAssetReader,
-        extraction_engine: ExtractionEngine,
+        extraction_engine_resolver: ExtractionEngineResolver,
         object_storage: ObjectStorage,
         storage_asset_repository: StorageAssetRepository,
         chunking_task_scheduler: ChunkingTaskScheduler,
@@ -48,7 +48,9 @@ class ExtractDocumentUseCase:
     ):
         self.task_repository = task_repository
         self.source_asset_reader = source_asset_reader
-        self.extraction_engine = extraction_engine
+        self.extraction_engine_resolver = (
+            extraction_engine_resolver
+        )
         self.object_storage = object_storage
         self.storage_asset_repository = (
             storage_asset_repository
@@ -104,8 +106,15 @@ class ExtractDocumentUseCase:
                     ),
                 )
 
+                extraction_engine = (
+                    await self.extraction_engine_resolver
+                    .resolve_for_job(
+                        task.ingestion_job_id,
+                    )
+                )
+
                 extraction_result = (
-                    await self.extraction_engine.extract(
+                    await extraction_engine.extract(
                         temp_path,
                     )
                 )

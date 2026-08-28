@@ -9,6 +9,7 @@ from module.data_platform.common.microsoft_graph.authentication.token_provider i
 from module.data_platform.data_hub.infrastructure.providers.sharepoint.provider import (
     SharePointProvider,
 )
+from shared.config.settings import settings
 
 
 class DataHubProviderResolver:
@@ -29,6 +30,7 @@ class DataHubProviderResolver:
         if provider_name == "sharepoint":
             graph_client = MicrosoftGraphClient(
                 token_provider=self._token_provider,
+                base_url=settings.GRAPH_BASE_URL,
             )
 
             return SharePointProvider(
