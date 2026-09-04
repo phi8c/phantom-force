@@ -1,13 +1,15 @@
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from integration.ingest.batch_finalizer import (
     IngestBatchFinalizer,
 )
 from module.ingest.classification.domain.contracts.batch_finalizer import (
     BatchFinalizationSignal,
     BatchFinalizer,
+)
+
+from module.ingest.chunking.domain.contracts.chunk_batch_completion_service import (
+    ChunkBatchCompletionService,
 )
 
 
@@ -17,11 +19,10 @@ class ModuleBatchFinalizer(
 
     def __init__(
         self,
-        session: AsyncSession,
+        completion_service: ChunkBatchCompletionService,
     ):
-        self.session = session
         self._finalizer = IngestBatchFinalizer(
-            session=session,
+            completion_service=completion_service,
         )
 
     async def complete_classification(

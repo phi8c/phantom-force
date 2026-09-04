@@ -2,18 +2,15 @@ from datetime import datetime
 from datetime import timezone
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.chunking.domain.contracts.downstream_task_scheduler import (
     DownstreamSignals,
     DownstreamTaskScheduler,
 )
-from module.ingest.chunking.infrastructure.persistence.models.chunk_batch_model import (
-    ChunkBatchModel,
+from module.ingest.chunking.domain.contracts.chunk_batch_completion_service import (
+    ChunkBatchCompletionService,
 )
-from module.ingest.chunking.infrastructure.persistence.models.document_chunk_model import (
-    DocumentChunkModel,
+from module.ingest.chunking.domain.contracts.document_chunk_query import (
+    DocumentChunkQuery,
 )
 from module.ingest.classification.domain.contracts.classification_dispatcher import (
     ClassificationDispatcher,
@@ -27,11 +24,11 @@ from module.ingest.classification.domain.entities.classification_task import (
 from module.ingest.classification.domain.enums.task_status import (
     TaskStatus as ClassificationTaskStatus,
 )
-from module.ingest.classification.infrastructure.persistence.repositories.classification_task_repository_impl import (
-    ClassificationTaskRepositoryImpl,
+from module.ingest.classification.domain.contracts.classification_task_repository import (
+    ClassificationTaskRepository,
 )
-from module.ingest.classification.infrastructure.persistence.repositories.chunk_classification_repository_impl import (
-    ChunkClassificationRepositoryImpl,
+from module.ingest.classification.domain.contracts.chunk_classification_repository import (
+    ChunkClassificationRepository,
 )
 from module.ingest.config.domain.contracts.ingestion_config_repository import (
     IngestionConfigRepository,
@@ -45,8 +42,8 @@ from module.ingest.embedding.domain.entities.embedding_task import (
 from module.ingest.embedding.domain.enums.task_status import (
     TaskStatus as EmbeddingTaskStatus,
 )
-from module.ingest.embedding.infrastructure.persistence.repositories.embedding_task_repository_impl import (
-    EmbeddingTaskRepositoryImpl,
+from module.ingest.embedding.domain.contracts.embedding_task_repository import (
+    EmbeddingTaskRepository,
 )
 
 
@@ -57,17 +54,21 @@ class ModuleDownstreamTaskScheduler(
     def __init__(
         self,
         *,
-        session: AsyncSession,
         ingestion_config_repository: IngestionConfigRepository,
-        embedding_task_repository: EmbeddingTaskRepositoryImpl,
-        classification_task_repository: ClassificationTaskRepositoryImpl,
-        chunk_classification_repository: ChunkClassificationRepositoryImpl,
+        chunk_query: DocumentChunkQuery,
+        batch_completion_service: ChunkBatchCompletionService,
+        embedding_task_repository: EmbeddingTaskRepository,
+        classification_task_repository: ClassificationTaskRepository,
+        chunk_classification_repository: ChunkClassificationRepository,
         embedding_dispatcher: EmbeddingDispatcher,
         classification_dispatcher: ClassificationDispatcher,
     ):
-        self.session = session
         self.ingestion_config_repository = (
             ingestion_config_repository
+        )
+        self.chunk_query = chunk_query
+        self.batch_completion_service = (
+            batch_completion_service
         )
         self.embedding_task_repository = (
             embedding_task_repository
@@ -119,8 +120,11 @@ class ModuleDownstreamTaskScheduler(
             await self._ensure_default_classifications(
                 batch_id,
             )
-            await self._mark_classification_completed(
-                batch_id,
+            await (
+                self.batch_completion_service
+                .mark_classification_completed(
+                    batch_id,
+                )
             )
 
         return DownstreamSignals(
@@ -267,67 +271,28 @@ class ModuleDownstreamTaskScheduler(
             configuration.is_classification
         )
 
-    async def _mark_classification_completed(
-        self,
-        batch_id: UUID,
-    ) -> None:
-
-        statement = select(
-            ChunkBatchModel
-        ).where(
-            ChunkBatchModel.id == batch_id,
-        ).with_for_update()
-
-        result = await self.session.execute(
-            statement,
-        )
-
-        batch = result.scalar_one_or_none()
-
-        if batch is None:
-            raise ValueError(
-                "Document chunk batch not found"
-            )
-
-        if batch.classification_completed:
-            return
-
-        batch.classification_completed = True
-        batch.updated_at = datetime.now(
-            timezone.utc,
-        )
-
-        await self.session.flush()
-
     async def _ensure_default_classifications(
         self,
         batch_id: UUID,
     ) -> None:
 
-        statement = select(
-            DocumentChunkModel
-        ).where(
-            DocumentChunkModel.batch_id
-            == batch_id,
-        )
-
-        result = await self.session.execute(
-            statement,
+        chunks = await self.chunk_query.list_by_batch_id(
+            batch_id,
         )
 
         classifications = [
             ChunkClassification(
                 id=None,
-                batch_id=batch_id,
                 chunk_id=chunk.id,
-                sensitivity=1,
-                metadata={
+                model_name="classification_disabled",
+                label="disabled",
+                confidence=None,
+                raw_response={
                     "classification": "disabled",
                 },
                 created_at=None,
-                updated_at=None,
             )
-            for chunk in result.scalars().all()
+            for chunk in chunks
         ]
 
         await (

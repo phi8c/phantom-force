@@ -21,11 +21,8 @@ from module.ingest.discovery.infrastructure.persistence.repositories.ingestion_d
 from module.ingest.discovery.infrastructure.persistence.repositories.ingestion_document_state_repository_impl import (
     IngestionDocumentStateRepositoryImpl,
 )
-from module.ingest.download.domain.contracts.download_dispatcher import (
-    DownloadDispatcher,
-)
-from module.ingest.download.infrastructure.persistence.repositories.download_task_repository_impl import (
-    DownloadTaskRepositoryImpl,
+from module.ingest.discovery.domain.contracts.download_task_scheduler import (
+    DownloadTaskScheduler,
 )
 from module.ingest.discovery.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork,
@@ -37,14 +34,11 @@ from module.master_data.data_hub_providers.infrastructure.persistence.repositori
     DataHubProviderRepositoryImpl,
 )
 
-from integration.ingest.discovery.data_hub_discovery_provider_resolver import (
+from module.ingest.discovery.infrastructure.providers.data_hub_discovery_provider_resolver import (
     DataHubDiscoveryProviderResolver,
 )
-from integration.ingest.discovery.data_hub_source_catalog import (
+from module.ingest.discovery.infrastructure.catalog.data_hub_source_catalog import (
     ModuleDataHubSourceCatalog,
-)
-from integration.ingest.discovery.download_task_scheduler import (
-    ModuleDownloadTaskScheduler,
 )
 
 
@@ -52,7 +46,7 @@ def create_discover_batch_use_case(
     *,
     session: AsyncSession,
     data_hub_provider_resolver: DataHubProviderResolver,
-    download_dispatcher: DownloadDispatcher,
+    download_task_scheduler: DownloadTaskScheduler,
 ) -> DiscoverBatchUseCase:
 
     ingestion_config_repository = (
@@ -89,10 +83,6 @@ def create_discover_batch_use_case(
         )
     )
 
-    download_task_repository = DownloadTaskRepositoryImpl(
-        session=session,
-    )
-
     uow = SQLAlchemyUnitOfWork(
         session=session,
     )
@@ -121,10 +111,7 @@ def create_discover_batch_use_case(
                 data_hub_provider_resolver
             ),
         ),
-        download_task_scheduler=ModuleDownloadTaskScheduler(
-            task_repository=download_task_repository,
-            dispatcher=download_dispatcher,
-        ),
+        download_task_scheduler=download_task_scheduler,
         uow=uow,
     )
 
@@ -134,7 +121,7 @@ async def create_discover_batch_use_case_scope(
     *,
     session_factory,
     data_hub_provider_resolver: DataHubProviderResolver,
-    download_dispatcher: DownloadDispatcher,
+    download_task_scheduler: DownloadTaskScheduler,
 ) -> AsyncIterator[DiscoverBatchUseCase]:
 
     async with session_factory() as session:
@@ -143,5 +130,5 @@ async def create_discover_batch_use_case_scope(
             data_hub_provider_resolver=(
                 data_hub_provider_resolver
             ),
-            download_dispatcher=download_dispatcher,
+            download_task_scheduler=download_task_scheduler,
         )

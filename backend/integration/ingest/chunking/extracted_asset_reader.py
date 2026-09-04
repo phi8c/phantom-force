@@ -1,15 +1,12 @@
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.chunking.domain.contracts.extracted_asset_reader import (
     ExtractedAsset,
     ExtractedAssetReader,
 )
-from module.ingest.download.infrastructure.persistence.models.storage_asset_model import (
-    StorageAssetModel,
+from module.ingest.extraction.domain.contracts.extracted_asset_query import (
+    ExtractedAssetQuery,
 )
 
 
@@ -19,10 +16,10 @@ class StorageExtractedAssetReader(
 
     def __init__(
         self,
-        session: AsyncSession,
+        extracted_asset_query: ExtractedAssetQuery,
         file_storage,
     ):
-        self.session = session
+        self.extracted_asset_query = extracted_asset_query
         self._file_storage = file_storage
 
     async def open_extracted(
@@ -32,36 +29,10 @@ class StorageExtractedAssetReader(
         document_id: UUID,
     ) -> ExtractedAsset:
 
-        statement = (
-            select(
-                StorageAssetModel
-            )
-            .where(
-                StorageAssetModel.document_id
-                == document_id,
-                StorageAssetModel.asset_type
-                == "EXTRACTED",
-                StorageAssetModel.storage_path
-                == self._storage_path(
-                    ingestion_job_id=(
-                        ingestion_job_id
-                    ),
-                    document_id=document_id,
-                ),
-            )
-            .order_by(
-                StorageAssetModel.created_at.desc(),
-            )
-            .limit(
-                1,
-            )
+        asset = await self.extracted_asset_query.get_extracted(
+            ingestion_job_id=ingestion_job_id,
+            document_id=document_id,
         )
-
-        result = await self.session.execute(
-            statement,
-        )
-
-        asset = result.scalar_one_or_none()
 
         if asset is None:
             raise ValueError(
@@ -100,17 +71,3 @@ class StorageExtractedAssetReader(
         )
 
         yield content
-
-    @staticmethod
-    def _storage_path(
-        *,
-        ingestion_job_id: UUID,
-        document_id: UUID,
-    ) -> str:
-
-        return (
-            f"ingest/"
-            f"{ingestion_job_id}/"
-            f"{document_id}/"
-            f"extracted.json"
-        )

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from integration.ingest.extraction.docling_extraction_engine import (
+from module.ingest.extraction.infrastructure.engine.docling_extraction_engine import (
     DoclingExtractionEngine,
 )
 from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (

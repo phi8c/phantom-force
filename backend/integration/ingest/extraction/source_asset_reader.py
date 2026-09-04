@@ -1,14 +1,8 @@
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from module.ingest.discovery.infrastructure.persistence.models.document_model import (
-    DocumentModel,
-)
-from module.ingest.download.infrastructure.persistence.models.storage_asset_model import (
-    StorageAssetModel,
+from module.ingest.download.domain.contracts.source_asset_query import (
+    SourceAssetQuery,
 )
 from module.ingest.extraction.domain.contracts.source_asset_reader import (
     SourceAsset,
@@ -22,10 +16,10 @@ class StorageSourceAssetReader(
 
     def __init__(
         self,
-        session: AsyncSession,
+        source_asset_query: SourceAssetQuery,
         file_storage,
     ):
-        self.session = session
+        self.source_asset_query = source_asset_query
         self._file_storage = file_storage
 
     async def open_source(
@@ -33,53 +27,25 @@ class StorageSourceAssetReader(
         document_id: UUID,
     ) -> SourceAsset:
 
-        statement = (
-            select(
-                StorageAssetModel,
-                DocumentModel,
-            )
-            .join(
-                DocumentModel,
-                DocumentModel.id
-                == StorageAssetModel.document_id,
-            )
-            .where(
-                StorageAssetModel.document_id
-                == document_id,
-                StorageAssetModel.asset_type
-                == "SOURCE",
-            )
-            .order_by(
-                StorageAssetModel.created_at.desc(),
-            )
-            .limit(
-                1,
-            )
+        asset = await self.source_asset_query.get_latest_source(
+            document_id,
         )
 
-        result = await self.session.execute(
-            statement,
-        )
-
-        row = result.one_or_none()
-
-        if row is None:
+        if asset is None:
             raise ValueError(
                 "SOURCE storage asset not found"
             )
 
-        asset_model, document_model = row
-
         return SourceAsset(
             document_id=document_id,
-            file_name=document_model.file_name,
+            file_name=asset.file_name,
             content=(
                 self._open_content(
-                    asset_model.storage_path,
+                    asset.storage_path,
                 )
             ),
-            content_type=asset_model.content_type,
-            size_bytes=asset_model.size_bytes,
+            content_type=asset.content_type,
+            size_bytes=asset.size_bytes,
         )
 
     async def _open_content(

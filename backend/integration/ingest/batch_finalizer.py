@@ -1,32 +1,18 @@
-from dataclasses import dataclass
-from datetime import datetime
-from datetime import timezone
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from module.ingest.chunking.infrastructure.persistence.models.chunk_batch_model import (
-    ChunkBatchModel,
+from module.ingest.chunking.domain.contracts.chunk_batch_completion_service import (
+    BatchCompletionResult,
+    ChunkBatchCompletionService,
 )
-
-
-@dataclass(frozen=True)
-class BatchCompletionResult:
-    dispatch_index: bool
 
 
 class IngestBatchFinalizer:
 
     def __init__(
         self,
-        session: AsyncSession,
-        dispatch_index_enabled: bool = False,
+        completion_service: ChunkBatchCompletionService,
     ):
-        self.session = session
-        self.dispatch_index_enabled = (
-            dispatch_index_enabled
-        )
+        self.completion_service = completion_service
 
     async def complete_embedding(
         self,
@@ -35,10 +21,9 @@ class IngestBatchFinalizer:
         batch_id: UUID,
     ) -> BatchCompletionResult:
 
-        return await self._complete(
+        return await self.completion_service.complete_embedding(
             ingestion_job_id=ingestion_job_id,
             batch_id=batch_id,
-            embedding_completed=True,
         )
 
     async def complete_classification(
@@ -48,71 +33,10 @@ class IngestBatchFinalizer:
         batch_id: UUID,
     ) -> BatchCompletionResult:
 
-        return await self._complete(
-            ingestion_job_id=ingestion_job_id,
-            batch_id=batch_id,
-            classification_completed=True,
-        )
-
-    async def _complete(
-        self,
-        *,
-        ingestion_job_id: UUID,
-        batch_id: UUID,
-        embedding_completed: bool = False,
-        classification_completed: bool = False,
-    ) -> BatchCompletionResult:
-
-        statement = (
-            select(
-                ChunkBatchModel
+        return await (
+            self.completion_service
+            .complete_classification(
+                ingestion_job_id=ingestion_job_id,
+                batch_id=batch_id,
             )
-            .where(
-                ChunkBatchModel.id == batch_id,
-                ChunkBatchModel.ingestion_job_id
-                == ingestion_job_id,
-            )
-            .with_for_update()
-        )
-
-        result = await self.session.execute(
-            statement,
-        )
-
-        batch = result.scalar_one_or_none()
-
-        if batch is None:
-            raise ValueError(
-                "Document chunk batch not found"
-            )
-
-        now = datetime.now(
-            timezone.utc,
-        )
-
-        if embedding_completed:
-            batch.embedding_completed = True
-
-        if classification_completed:
-            batch.classification_completed = True
-
-        dispatch_index = False
-
-        if (
-            batch.embedding_completed
-            and batch.classification_completed
-            and not batch.batch_completed
-        ):
-            batch.batch_completed = True
-            dispatch_index = True
-
-        batch.updated_at = now
-
-        await self.session.flush()
-
-        return BatchCompletionResult(
-            dispatch_index=(
-                dispatch_index
-                and self.dispatch_index_enabled
-            ),
         )

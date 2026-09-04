@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from integration.ingest.embedding.legacy_embedding_engine import (
+from module.ingest.embedding.infrastructure.engine.legacy_embedding_engine import (
     LegacyEmbeddingEngineAdapter,
 )
 from module.ai.embedding_model.infrastructure.persistence.repositories.embedding_model_repository_impl import (

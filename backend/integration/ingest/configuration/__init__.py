@@ -1,4 +1,4 @@
-from integration.ingest.configuration.master_config_resolver import (
+from module.ingest.master.composition.master_config_resolver import (
     IngestionMasterConfig,
     IngestionMasterConfigResolver,
 )

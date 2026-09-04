@@ -21,15 +21,8 @@ from module.ingest.download.infrastructure.persistence.repositories.storage_asse
 from module.ingest.download.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork,
 )
-from module.ingest.extraction.domain.contracts.extraction_dispatcher import (
-    ExtractionDispatcher,
-)
-from module.ingest.extraction.infrastructure.persistence.repositories.extraction_task_repository_impl import (
-    ExtractionTaskRepositoryImpl,
-)
-
-from integration.ingest.download.extraction_task_scheduler import (
-    ModuleExtractionTaskScheduler,
+from module.ingest.download.domain.contracts.extraction_task_scheduler import (
+    ExtractionTaskScheduler,
 )
 
 
@@ -38,7 +31,7 @@ def create_download_file_use_case(
     session: AsyncSession,
     document_source: DocumentSource,
     object_storage: ObjectStorage,
-    extraction_dispatcher: ExtractionDispatcher,
+    extraction_task_scheduler: ExtractionTaskScheduler,
     max_attempts: int = 3,
 ) -> DownloadFileUseCase:
 
@@ -48,12 +41,6 @@ def create_download_file_use_case(
 
     storage_asset_repository = (
         StorageAssetRepositoryImpl(
-            session=session,
-        )
-    )
-
-    extraction_task_repository = (
-        ExtractionTaskRepositoryImpl(
             session=session,
         )
     )
@@ -69,16 +56,7 @@ def create_download_file_use_case(
         storage_asset_repository=(
             storage_asset_repository
         ),
-        extraction_task_scheduler=(
-            ModuleExtractionTaskScheduler(
-                task_repository=(
-                    extraction_task_repository
-                ),
-                dispatcher=(
-                    extraction_dispatcher
-                ),
-            )
-        ),
+        extraction_task_scheduler=extraction_task_scheduler,
         uow=uow,
         max_attempts=max_attempts,
     )
@@ -90,7 +68,7 @@ async def create_download_file_use_case_scope(
     session_factory,
     document_source: DocumentSource,
     object_storage: ObjectStorage,
-    extraction_dispatcher: ExtractionDispatcher,
+    extraction_task_scheduler: ExtractionTaskScheduler,
     max_attempts: int = 3,
 ) -> AsyncIterator[DownloadFileUseCase]:
 
@@ -99,8 +77,8 @@ async def create_download_file_use_case_scope(
             session=session,
             document_source=document_source,
             object_storage=object_storage,
-            extraction_dispatcher=(
-                extraction_dispatcher
+            extraction_task_scheduler=(
+                extraction_task_scheduler
             ),
             max_attempts=max_attempts,
         )

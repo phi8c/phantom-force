@@ -1,22 +1,22 @@
 from contextlib import asynccontextmanager
 
-from integration.ingest.chunking.factory import (
-    create_chunk_document_use_case_scope_with_downstream,
+from module.ingest.chunking.composition.factory import (
+    create_chunk_document_use_case,
 )
-from integration.ingest.classification.factory import (
-    create_classify_batch_use_case_scope,
+from module.ingest.classification.composition.factory import (
+    create_classify_batch_use_case,
 )
-from integration.ingest.discovery.factory import (
-    create_discover_batch_use_case_scope,
+from module.ingest.discovery.composition.factory import (
+    create_discover_batch_use_case,
 )
-from integration.ingest.download.factory import (
-    create_download_file_use_case_scope,
+from module.ingest.download.composition.factory import (
+    create_download_file_use_case,
 )
-from integration.ingest.embedding.factory import (
-    create_embed_batch_use_case_scope,
+from module.ingest.embedding.composition.factory import (
+    create_embed_batch_use_case,
 )
-from integration.ingest.extraction.factory import (
-    create_extract_document_use_case_scope_with_chunking,
+from module.ingest.extraction.composition.factory import (
+    create_extract_document_use_case,
 )
 
 from bootstrap.database import async_session_factory
@@ -38,8 +38,68 @@ from module.ingest.master.extraction_strategy.infrastructure.persistence.reposit
 from module.ingest.master.model_set.infrastructure.persistence.repositories.model_set_repository_impl import (
     ModelSetRepositoryImpl,
 )
+from module.ingest.download.infrastructure.persistence.repositories.download_task_repository_impl import (
+    DownloadTaskRepositoryImpl,
+)
+from module.ingest.extraction.infrastructure.persistence.repositories.extraction_task_repository_impl import (
+    ExtractionTaskRepositoryImpl,
+)
+from module.ingest.chunking.infrastructure.persistence.repositories.chunking_task_repository_impl import (
+    ChunkingTaskRepositoryImpl,
+)
+from module.ingest.embedding.infrastructure.persistence.repositories.embedding_task_repository_impl import (
+    EmbeddingTaskRepositoryImpl,
+)
+from module.ingest.classification.infrastructure.persistence.repositories.classification_task_repository_impl import (
+    ClassificationTaskRepositoryImpl,
+)
+from module.ingest.classification.infrastructure.persistence.repositories.chunk_classification_repository_impl import (
+    ChunkClassificationRepositoryImpl,
+)
+from module.ingest.download.infrastructure.persistence.queries.source_asset_query import (
+    SourceAssetQuery,
+)
+from module.ingest.extraction.infrastructure.persistence.queries.extracted_asset_query import (
+    ExtractedAssetQuery,
+)
+from module.ingest.chunking.infrastructure.persistence.queries.chunk_batch_completion_service import (
+    ChunkBatchCompletionService,
+)
+from module.ingest.chunking.infrastructure.persistence.queries.document_chunk_query import (
+    DocumentChunkQuery,
+)
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_repository_impl import (
     KnowledgeSpaceRepositoryImpl,
+)
+from integration.ingest.discovery.download_task_scheduler import (
+    ModuleDownloadTaskScheduler,
+)
+from integration.ingest.download.extraction_task_scheduler import (
+    ModuleExtractionTaskScheduler,
+)
+from integration.ingest.extraction.chunking_task_scheduler import (
+    ModuleChunkingTaskScheduler,
+)
+from integration.ingest.extraction.source_asset_reader import (
+    StorageSourceAssetReader,
+)
+from integration.ingest.chunking.downstream_task_scheduler import (
+    ModuleDownstreamTaskScheduler,
+)
+from integration.ingest.chunking.extracted_asset_reader import (
+    StorageExtractedAssetReader,
+)
+from integration.ingest.embedding.batch_finalizer import (
+    ModuleBatchFinalizer as EmbeddingBatchFinalizer,
+)
+from integration.ingest.embedding.chunk_reader import (
+    ModuleChunkReader as EmbeddingChunkReader,
+)
+from integration.ingest.classification.batch_finalizer import (
+    ModuleBatchFinalizer as ClassificationBatchFinalizer,
+)
+from integration.ingest.classification.chunk_reader import (
+    ModuleChunkReader as ClassificationChunkReader,
 )
 
 
@@ -90,12 +150,26 @@ def download_use_case_scope(
     extraction_dispatcher,
 ):
 
-    return create_download_file_use_case_scope(
-        session_factory=async_session_factory,
-        document_source=document_source,
-        object_storage=object_storage,
-        extraction_dispatcher=extraction_dispatcher,
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            yield create_download_file_use_case(
+                session=session,
+                document_source=document_source,
+                object_storage=object_storage,
+                extraction_task_scheduler=(
+                    ModuleExtractionTaskScheduler(
+                        task_repository=(
+                            ExtractionTaskRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        dispatcher=extraction_dispatcher,
+                    )
+                ),
+            )
+
+    return scope()
 
 
 def discovery_use_case_scope(
@@ -104,13 +178,27 @@ def discovery_use_case_scope(
     download_dispatcher,
 ):
 
-    return create_discover_batch_use_case_scope(
-        session_factory=async_session_factory,
-        data_hub_provider_resolver=(
-            data_hub_provider_resolver
-        ),
-        download_dispatcher=download_dispatcher,
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            yield create_discover_batch_use_case(
+                session=session,
+                data_hub_provider_resolver=(
+                    data_hub_provider_resolver
+                ),
+                download_task_scheduler=(
+                    ModuleDownloadTaskScheduler(
+                        task_repository=(
+                            DownloadTaskRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        dispatcher=download_dispatcher,
+                    )
+                ),
+            )
+
+    return scope()
 
 
 def extraction_use_case_scope(
@@ -120,14 +208,33 @@ def extraction_use_case_scope(
     chunking_dispatcher,
 ):
 
-    return (
-        create_extract_document_use_case_scope_with_chunking(
-            session_factory=async_session_factory,
-            file_storage=file_storage,
-            object_storage=object_storage,
-            chunking_dispatcher=chunking_dispatcher,
-        )
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            yield create_extract_document_use_case(
+                session=session,
+                source_asset_reader=(
+                    StorageSourceAssetReader(
+                        source_asset_query=SourceAssetQuery(
+                            session=session,
+                        ),
+                        file_storage=file_storage,
+                    )
+                ),
+                object_storage=object_storage,
+                chunking_task_scheduler=(
+                    ModuleChunkingTaskScheduler(
+                        task_repository=(
+                            ChunkingTaskRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        dispatcher=chunking_dispatcher,
+                    )
+                ),
+            )
+
+    return scope()
 
 
 def chunking_use_case_scope(
@@ -137,27 +244,107 @@ def chunking_use_case_scope(
     classification_dispatcher,
 ):
 
-    return (
-        create_chunk_document_use_case_scope_with_downstream(
-            session_factory=async_session_factory,
-            file_storage=file_storage,
-            embedding_dispatcher=embedding_dispatcher,
-            classification_dispatcher=(
-                classification_dispatcher
-            ),
-        )
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            yield create_chunk_document_use_case(
+                session=session,
+                extracted_asset_reader=(
+                    StorageExtractedAssetReader(
+                        extracted_asset_query=(
+                            ExtractedAssetQuery(
+                                session=session,
+                            )
+                        ),
+                        file_storage=file_storage,
+                    )
+                ),
+                downstream_task_scheduler=(
+                    ModuleDownstreamTaskScheduler(
+                        ingestion_config_repository=(
+                            IngestionConfigRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        chunk_query=DocumentChunkQuery(
+                            session=session,
+                        ),
+                        batch_completion_service=(
+                            ChunkBatchCompletionService(
+                                session=session,
+                            )
+                        ),
+                        embedding_task_repository=(
+                            EmbeddingTaskRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        classification_task_repository=(
+                            ClassificationTaskRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        chunk_classification_repository=(
+                            ChunkClassificationRepositoryImpl(
+                                session=session,
+                            )
+                        ),
+                        embedding_dispatcher=(
+                            embedding_dispatcher
+                        ),
+                        classification_dispatcher=(
+                            classification_dispatcher
+                        ),
+                    )
+                ),
+            )
+
+    return scope()
 
 
 def embedding_use_case_scope():
 
-    return create_embed_batch_use_case_scope(
-        session_factory=async_session_factory,
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            completion_service = ChunkBatchCompletionService(
+                session=session,
+            )
+
+            yield create_embed_batch_use_case(
+                session=session,
+                chunk_reader=EmbeddingChunkReader(
+                    chunk_query=DocumentChunkQuery(
+                        session=session,
+                    ),
+                ),
+                batch_finalizer=EmbeddingBatchFinalizer(
+                    completion_service=completion_service,
+                ),
+            )
+
+    return scope()
 
 
 def classification_use_case_scope():
 
-    return create_classify_batch_use_case_scope(
-        session_factory=async_session_factory,
-    )
+    @asynccontextmanager
+    async def scope():
+        async with async_session_factory() as session:
+            completion_service = ChunkBatchCompletionService(
+                session=session,
+            )
+
+            yield create_classify_batch_use_case(
+                session=session,
+                chunk_reader=ClassificationChunkReader(
+                    chunk_query=DocumentChunkQuery(
+                        session=session,
+                    ),
+                ),
+                batch_finalizer=ClassificationBatchFinalizer(
+                    completion_service=completion_service,
+                ),
+            )
+
+    return scope()

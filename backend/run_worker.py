@@ -258,7 +258,7 @@ def create_download_stream_factory(
 def create_download_document_source(
     token_provider: TokenProvider,
 ):
-    from integration.ingest.download.data_hub_document_source import (
+    from module.ingest.download.infrastructure.sources.data_hub_document_source import (
         DataHubDocumentSource,
     )
     from module.ingest.download.infrastructure.persistence.readers.download_document_reader_impl import (
@@ -292,7 +292,7 @@ def create_download_object_storage(
     file_storage,
     storage_provider_id: UUID,
 ):
-    from integration.ingest.download.file_storage_object_storage import (
+    from module.ingest.download.infrastructure.object_storage.file_storage_object_storage import (
         FileStorageObjectStorage,
     )
 
@@ -306,7 +306,7 @@ def create_extraction_object_storage(
     file_storage,
     storage_provider_id: UUID,
 ):
-    from integration.ingest.extraction.file_storage_object_storage import (
+    from module.ingest.extraction.infrastructure.object_storage.file_storage_object_storage import (
         FileStorageObjectStorage,
     )
 

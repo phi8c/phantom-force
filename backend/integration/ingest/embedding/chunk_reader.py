@@ -1,10 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from module.ingest.chunking.infrastructure.persistence.models.document_chunk_model import (
-    DocumentChunkModel,
+from module.ingest.chunking.domain.contracts.document_chunk_query import (
+    DocumentChunkQuery,
 )
 from module.ingest.embedding.domain.contracts.chunk_reader import (
     ChunkForEmbedding,
@@ -18,40 +15,24 @@ class ModuleChunkReader(
 
     def __init__(
         self,
-        session: AsyncSession,
+        chunk_query: DocumentChunkQuery,
     ):
-        self.session = session
+        self.chunk_query = chunk_query
 
     async def list_by_batch_id(
         self,
         batch_id: UUID,
     ) -> list[ChunkForEmbedding]:
 
-        statement = (
-            select(
-                DocumentChunkModel
-            )
-            .where(
-                DocumentChunkModel.batch_id
-                == batch_id,
-            )
-            .order_by(
-                DocumentChunkModel.chunk_index.asc(),
-            )
-        )
-
-        result = await self.session.execute(
-            statement,
+        chunks = await self.chunk_query.list_by_batch_id(
+            batch_id,
         )
 
         return [
             ChunkForEmbedding(
-                id=model.id,
-                content=model.content,
-                metadata=(
-                    model.metadata_payload
-                    or {}
-                ),
+                id=chunk.id,
+                content=chunk.content,
+                metadata=chunk.metadata,
             )
-            for model in result.scalars().all()
+            for chunk in chunks
         ]

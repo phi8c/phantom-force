@@ -6,6 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
+from module.ingest.classification.domain.contracts.batch_finalizer import (
+    BatchFinalizer,
+)
+from module.ingest.classification.domain.contracts.chunk_reader import (
+    ChunkReader,
+)
 from module.ingest.classification.infrastructure.persistence.repositories.chunk_classification_repository_impl import (
     ChunkClassificationRepositoryImpl,
 )
@@ -16,13 +22,7 @@ from module.ingest.classification.infrastructure.persistence.sqlalchemy_unit_of_
     SQLAlchemyUnitOfWork,
 )
 
-from integration.ingest.classification.batch_finalizer import (
-    ModuleBatchFinalizer,
-)
-from integration.ingest.classification.chunk_reader import (
-    ModuleChunkReader,
-)
-from integration.ingest.classification.legacy_classification_engine import (
+from module.ingest.classification.infrastructure.engine.legacy_classification_engine import (
     LegacyClassificationEngineAdapter,
 )
 
@@ -30,6 +30,8 @@ from integration.ingest.classification.legacy_classification_engine import (
 def create_classify_batch_use_case(
     *,
     session: AsyncSession,
+    chunk_reader: ChunkReader,
+    batch_finalizer: BatchFinalizer,
     max_attempts: int = 3,
 ) -> ClassifyBatchUseCase:
 
@@ -37,9 +39,7 @@ def create_classify_batch_use_case(
         task_repository=ClassificationTaskRepositoryImpl(
             session=session,
         ),
-        chunk_reader=ModuleChunkReader(
-            session=session,
-        ),
+        chunk_reader=chunk_reader,
         classification_engine=(
             LegacyClassificationEngineAdapter()
         ),
@@ -48,9 +48,7 @@ def create_classify_batch_use_case(
                 session=session,
             )
         ),
-        batch_finalizer=ModuleBatchFinalizer(
-            session=session,
-        ),
+        batch_finalizer=batch_finalizer,
         uow=SQLAlchemyUnitOfWork(
             session=session,
         ),
@@ -62,11 +60,15 @@ def create_classify_batch_use_case(
 async def create_classify_batch_use_case_scope(
     *,
     session_factory,
+    chunk_reader: ChunkReader,
+    batch_finalizer: BatchFinalizer,
     max_attempts: int = 3,
 ) -> AsyncIterator[ClassifyBatchUseCase]:
 
     async with session_factory() as session:
         yield create_classify_batch_use_case(
             session=session,
+            chunk_reader=chunk_reader,
+            batch_finalizer=batch_finalizer,
             max_attempts=max_attempts,
         )

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from integration.ingest.chunking.chunking_engine import (
+from module.ingest.chunking.infrastructure.engine.chunking_engine import (
     LegacyChunkingEngineAdapter,
 )
 from module.ingest.chunking.domain.contracts.chunking_engine import (
