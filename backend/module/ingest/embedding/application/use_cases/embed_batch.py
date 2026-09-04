@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from datetime import timezone
 from uuid import UUID
@@ -26,6 +27,9 @@ from module.ingest.embedding.domain.entities.document_chunk_embedding import (
 from module.ingest.embedding.domain.enums.task_status import (
     TaskStatus,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class EmbedBatchUseCase:
@@ -71,8 +75,20 @@ class EmbedBatchUseCase:
             )
 
         try:
+            logger.info(
+                "embedding usecase_start task_id=%s job_id=%s batch_id=%s",
+                task_id,
+                task.ingestion_job_id,
+                task.batch_id,
+            )
+
             chunks = await self.chunk_reader.list_by_batch_id(
                 task.batch_id,
+            )
+            logger.info(
+                "embedding chunks_loaded task_id=%s chunks=%s",
+                task_id,
+                len(chunks),
             )
 
             embedding_engine = (
@@ -82,8 +98,18 @@ class EmbedBatchUseCase:
                 )
             )
 
+            logger.info(
+                "embedding engine_start task_id=%s chunks=%s",
+                task_id,
+                len(chunks),
+            )
             results = await embedding_engine.embed_batch(
                 chunks,
+            )
+            logger.info(
+                "embedding engine_done task_id=%s results=%s",
+                task_id,
+                len(results),
             )
 
             failed_results = [
@@ -115,8 +141,18 @@ class EmbedBatchUseCase:
                 )
             ]
 
+            logger.info(
+                "embedding persist_start task_id=%s embeddings=%s",
+                task_id,
+                len(embeddings),
+            )
             await self.embedding_repository.upsert_many(
                 embeddings,
+            )
+            logger.info(
+                "embedding persist_done task_id=%s embeddings=%s",
+                task_id,
+                len(embeddings),
             )
 
             signal = (
@@ -141,14 +177,27 @@ class EmbedBatchUseCase:
                 task,
             )
 
+            logger.info(
+                "embedding commit task_id=%s",
+                task_id,
+            )
             await self.uow.commit()
 
             if signal.dispatch_index:
+                logger.info(
+                    "embedding dispatch_index job_id=%s",
+                    task.ingestion_job_id,
+                )
                 await self.batch_finalizer.dispatch_index(
                     task.ingestion_job_id,
                 )
 
         except Exception as exc:
+            logger.exception(
+                "embedding failed task_id=%s error=%s",
+                task_id,
+                exc,
+            )
             await self.uow.rollback()
 
             task = await self.task_repository.get_by_id(
@@ -173,5 +222,11 @@ class EmbedBatchUseCase:
                 )
 
                 await self.uow.commit()
+
+                logger.info(
+                    "embedding retry_state task_id=%s status=%s",
+                    task_id,
+                    task.status.value,
+                )
 
             raise

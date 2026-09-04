@@ -12,8 +12,10 @@ from module.ingest.classification.domain.contracts.chunk_reader import (
 @dataclass(frozen=True)
 class ClassificationResult:
     chunk_id: UUID
-    sensitivity: int
-    metadata: dict[str, Any]
+    model_name: str
+    label: str
+    confidence: float | None
+    raw_response: dict[str, Any] | None
 
 
 class ClassificationEngine(ABC):

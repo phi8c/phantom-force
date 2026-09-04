@@ -1,6 +1,8 @@
 import json
 from uuid import UUID
 
+from azure.servicebus import ServiceBusMessage
+
 from module.ingest.discovery.domain.contracts.discovery_dispatcher import (
     DiscoveryDispatcher,
 )
@@ -12,9 +14,11 @@ class AzureDiscoveryDispatcher(
 
     def __init__(
         self,
-        queue_client,
+        service_bus_client,
+        queue_name: str,
     ):
-        self.queue_client = queue_client
+        self.service_bus_client = service_bus_client
+        self.queue_name = queue_name
 
     async def dispatch(
         self,
@@ -29,10 +33,13 @@ class AzureDiscoveryDispatcher(
             "batch_size": batch_size,
         }
 
-        from azure.servicebus import ServiceBusMessage
-
-        await self.queue_client.send_messages(
-            ServiceBusMessage(
-                json.dumps(payload),
-            )
+        sender = self.service_bus_client.get_queue_sender(
+            queue_name=self.queue_name,
         )
+
+        async with sender:
+            await sender.send_messages(
+                ServiceBusMessage(
+                    json.dumps(payload),
+                )
+            )

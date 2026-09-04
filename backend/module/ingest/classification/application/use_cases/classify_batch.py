@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from datetime import timezone
 from uuid import UUID
@@ -26,6 +27,9 @@ from module.ingest.classification.domain.entities.chunk_classification import (
 from module.ingest.classification.domain.enums.task_status import (
     TaskStatus,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ClassifyBatchUseCase:
@@ -66,6 +70,10 @@ class ClassifyBatchUseCase:
             )
 
         if task.status == TaskStatus.SKIPPED:
+            logger.info(
+                "classification skipped task_id=%s",
+                task_id,
+            )
             await self._complete_skipped(
                 task_id,
             )
@@ -77,32 +85,64 @@ class ClassifyBatchUseCase:
             )
 
         try:
-            chunks = await self.chunk_reader.list_by_batch_id(
+            logger.info(
+                "classification usecase_start task_id=%s job_id=%s batch_id=%s",
+                task_id,
+                task.ingestion_job_id,
                 task.batch_id,
             )
 
+            chunks = await self.chunk_reader.list_by_batch_id(
+                task.batch_id,
+            )
+            logger.info(
+                "classification chunks_loaded task_id=%s chunks=%s",
+                task_id,
+                len(chunks),
+            )
+
+            logger.info(
+                "classification engine_start task_id=%s chunks=%s",
+                task_id,
+                len(chunks),
+            )
             results = await (
                 self.classification_engine
                 .classify_batch(
                     chunks,
                 )
             )
+            logger.info(
+                "classification engine_done task_id=%s results=%s",
+                task_id,
+                len(results),
+            )
 
             classifications = [
                 ChunkClassification(
                     id=None,
-                    batch_id=task.batch_id,
                     chunk_id=result.chunk_id,
-                    sensitivity=result.sensitivity,
-                    metadata=result.metadata,
+                    model_name=result.model_name,
+                    label=result.label,
+                    confidence=result.confidence,
+                    raw_response=result.raw_response,
                     created_at=None,
-                    updated_at=None,
                 )
                 for result in results
             ]
 
+            logger.info(
+                "classification persist_start task_id=%s classifications=%s",
+                task_id,
+                len(classifications),
+            )
             await self.classification_repository.upsert_many(
                 classifications,
+            )
+            logger.info(
+                "classification persist_done task_id=%s classifications=%s",
+                task_id,
+                len(classifications),
             )
 
             signal = (
@@ -127,14 +167,27 @@ class ClassifyBatchUseCase:
                 task,
             )
 
+            logger.info(
+                "classification commit task_id=%s",
+                task_id,
+            )
             await self.uow.commit()
 
             if signal.dispatch_index:
+                logger.info(
+                    "classification dispatch_index job_id=%s",
+                    task.ingestion_job_id,
+                )
                 await self.batch_finalizer.dispatch_index(
                     task.ingestion_job_id,
                 )
 
         except Exception as exc:
+            logger.exception(
+                "classification failed task_id=%s error=%s",
+                task_id,
+                exc,
+            )
             await self.uow.rollback()
 
             task = await self.task_repository.get_by_id(
@@ -160,6 +213,12 @@ class ClassifyBatchUseCase:
 
                 await self.uow.commit()
 
+                logger.info(
+                    "classification retry_state task_id=%s status=%s",
+                    task_id,
+                    task.status.value,
+                )
+
             raise
 
     async def _complete_skipped(
@@ -184,9 +243,17 @@ class ClassifyBatchUseCase:
             )
         )
 
+        logger.info(
+            "classification skipped_commit task_id=%s",
+            task_id,
+        )
         await self.uow.commit()
 
         if signal.dispatch_index:
+            logger.info(
+                "classification skipped_dispatch_index job_id=%s",
+                task.ingestion_job_id,
+            )
             await self.batch_finalizer.dispatch_index(
                 task.ingestion_job_id,
             )

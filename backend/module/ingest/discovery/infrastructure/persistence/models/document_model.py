@@ -6,6 +6,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from uuid import UUID
@@ -24,12 +25,13 @@ class DocumentModel(
 ):
     __tablename__ = "documents"
 
-    data_hub_id: Mapped[UUID] = mapped_column(
-    ForeignKey(
-        "knowledge_space_data_hubs.id",
-    ),
-    nullable=False,
-)
+    data_hub_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "knowledge_space_data_hubs.id",
+        ),
+        nullable=True,
+    )
 
     file_name: Mapped[str] = mapped_column(
         String(500),

@@ -152,13 +152,6 @@ class DownloadFileUseCase:
 
             await self.uow.commit()
 
-            await (
-                self.extraction_task_scheduler
-                .dispatch_job(
-                    task.ingestion_job_id,
-                )
-            )
-
         except Exception as exc:
 
             await self.uow.rollback()

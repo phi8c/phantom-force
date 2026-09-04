@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.master.chunking_strategy.infrastructure.persistence.repositories.chunking_strategy_repository_impl import (
@@ -9,6 +8,9 @@ from module.ingest.master.chunking_strategy.infrastructure.persistence.repositor
 )
 from module.ingest.master.extraction_strategy.infrastructure.persistence.repositories.extraction_strategy_repository_impl import (
     ExtractionStrategyRepositoryImpl,
+)
+from module.ingest.master.model_set.infrastructure.persistence.repositories.model_set_repository_impl import (
+    ModelSetRepositoryImpl,
 )
 
 
@@ -25,7 +27,6 @@ class IngestionMasterConfigResolver:
         self,
         session: AsyncSession,
     ):
-        self._session = session
         self._extraction_repository = (
             ExtractionStrategyRepositoryImpl(
                 session=session,
@@ -33,6 +34,11 @@ class IngestionMasterConfigResolver:
         )
         self._chunking_repository = (
             ChunkingStrategyRepositoryImpl(
+                session=session,
+            )
+        )
+        self._model_set_repository = (
+            ModelSetRepositoryImpl(
                 session=session,
             )
         )
@@ -101,32 +107,23 @@ class IngestionMasterConfigResolver:
         if not code:
             return None
 
-        result = await self._session.execute(
-            text(
-                """
-                SELECT id
-                FROM model_sets
-                WHERE upper(code) = upper(:code)
-                  AND enabled = true
-                LIMIT 1
-                """
-            ),
-            {
-                "code": self._normalize_code(
-                    code,
-                ),
-            },
+        model_set = await self._model_set_repository.get_by_code(
+            self._normalize_code(
+                code,
+            )
         )
 
-        row = result.mappings().one_or_none()
-
-        if row is None:
+        if (
+            model_set is None
+            or model_set.id is None
+            or not model_set.enabled
+        ):
             raise ValueError(
                 "model_set_code is not available "
                 "or disabled"
             )
 
-        return row["id"]
+        return model_set.id
 
     @staticmethod
     def _normalize_code(

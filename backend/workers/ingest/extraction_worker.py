@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import socket
 from typing import AsyncContextManager
 from collections.abc import Callable
@@ -11,6 +12,9 @@ from uuid import UUID
 from module.ingest.extraction.application.use_cases.extract_document import (
     ExtractDocumentUseCase,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionWorker:
@@ -45,13 +49,28 @@ class ExtractionWorker:
         self,
     ) -> None:
 
+        logger.info(
+            "extraction started worker_id=%s claim_size=%s lease_seconds=%s",
+            self.worker_id,
+            self.claim_size,
+            self.lease_seconds,
+        )
+
         while True:
-            messages = await (
-                self.queue_client.receive_messages(
-                    max_message_count=1,
-                    max_wait_time=5,
+            try:
+                messages = await (
+                    self.queue_client.receive_messages(
+                        max_message_count=1,
+                        max_wait_time=5,
+                    )
                 )
-            )
+
+            except Exception:
+                logger.exception(
+                    "extraction receive_failed"
+                )
+                await asyncio.sleep(5)
+                continue
 
             found_message = bool(messages)
 
@@ -59,6 +78,10 @@ class ExtractionWorker:
                 try:
                     payload = json.loads(
                         str(message)
+                    )
+                    logger.info(
+                        "extraction received payload=%s",
+                        payload,
                     )
 
                     ingestion_job_id = UUID(
@@ -96,6 +119,11 @@ class ExtractionWorker:
                         )
 
                         await uow.commit()
+                        logger.info(
+                            "extraction claimed job_id=%s tasks=%s",
+                            ingestion_job_id,
+                            len(tasks),
+                        )
 
                     await asyncio.gather(
                         *[
@@ -114,8 +142,15 @@ class ExtractionWorker:
                             message,
                         )
                     )
+                    logger.info(
+                        "extraction completed job_id=%s",
+                        ingestion_job_id,
+                    )
 
                 except Exception:
+                    logger.exception(
+                        "extraction failed"
+                    )
                     continue
 
             if not found_message:
@@ -128,6 +163,14 @@ class ExtractionWorker:
 
         async with self.semaphore:
             async with self.use_case_factory() as use_case:
+                logger.info(
+                    "extraction task_start task_id=%s",
+                    task_id,
+                )
                 await use_case.execute(
+                    task_id,
+                )
+                logger.info(
+                    "extraction task_done task_id=%s",
                     task_id,
                 )

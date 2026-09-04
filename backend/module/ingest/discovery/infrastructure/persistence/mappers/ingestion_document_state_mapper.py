@@ -25,10 +25,18 @@ class IngestionDocumentStateMapper:
 
     @staticmethod
     def to_model(entity):
+        values = {
+            "document_id": entity.document_id,
+            "ingestion_job_id": entity.ingestion_job_id,
+            "status": entity.status.value,
+        }
+
+        if entity.created_at is not None:
+            values["created_at"] = entity.created_at
+
+        if entity.updated_at is not None:
+            values["updated_at"] = entity.updated_at
+
         return IngestionDocumentStateModel(
-            document_id=entity.document_id,
-            ingestion_job_id=entity.ingestion_job_id,
-            status=entity.status.value,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
+            **values,
         )

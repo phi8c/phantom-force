@@ -121,3 +121,41 @@ class IngestionConfigRepositoryImpl(
                 configuration_model,
             ),
         )
+
+    async def add_job(
+        self,
+        job: IngestionJob,
+    ) -> IngestionJob:
+
+        model = IngestionJobMapper.to_model(
+            job,
+        )
+
+        self.session.add(
+            model,
+        )
+        await self.session.flush()
+
+        return IngestionJobMapper.to_entity(
+            model,
+        )
+
+    async def add_configuration(
+        self,
+        configuration: IngestionJobConfiguration,
+    ) -> IngestionJobConfiguration:
+
+        model = IngestionJobConfigurationMapper.to_model(
+            configuration,
+        )
+
+        self.session.add(
+            model,
+        )
+        await self.session.flush()
+
+        return (
+            IngestionJobConfigurationMapper.to_entity(
+                model,
+            )
+        )

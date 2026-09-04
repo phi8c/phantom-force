@@ -5,7 +5,6 @@ from sqlalchemy.orm import mapped_column
 
 from shared.database.base import (
     Base,
-    TimestampMixin,
     UUIDMixin,
 )
 
@@ -13,7 +12,6 @@ from shared.database.base import (
 class ChunkingStrategyModel(
     Base,
     UUIDMixin,
-    TimestampMixin,
 ):
     __tablename__ = "chunking_strategies"
 

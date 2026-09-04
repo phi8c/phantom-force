@@ -22,8 +22,8 @@ class EmbeddingModelMapper:
             dimension=model.dimension,
             configuration=model.configuration,
             enabled=model.enabled,
-            created_at=model.created_at,
-            updated_at=model.updated_at,
+            created_at=None,
+            updated_at=None,
         )
 
     @staticmethod
@@ -39,6 +39,4 @@ class EmbeddingModelMapper:
             dimension=entity.dimension,
             configuration=entity.configuration,
             enabled=entity.enabled,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
         )

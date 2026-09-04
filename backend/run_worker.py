@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from uuid import UUID
 
@@ -22,6 +23,32 @@ from module.data_platform.common.microsoft_graph.authentication.token_provider i
 )
 from shared.config.settings import settings
 from sqlalchemy import text
+
+
+logger = logging.getLogger(__name__)
+
+
+def configure_worker_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format=(
+            "%(asctime)s | %(levelname)-5s | "
+            "%(name)s | %(message)s"
+        ),
+    )
+
+    for logger_name in (
+        "azure",
+        "azure.servicebus",
+        "azure.servicebus._pyamqp",
+        "azure.core.pipeline.policies.http_logging_policy",
+        "uamqp",
+    ):
+        logging.getLogger(
+            logger_name,
+        ).setLevel(
+            logging.WARNING,
+        )
 
 
 class ClientSecretGraphTokenProvider(TokenProvider):
@@ -119,14 +146,16 @@ def create_file_storage():
 
 
 async def get_storage_provider_id() -> UUID:
+    logger.info("Resolving active Supabase storage provider")
+
     async with async_session_factory() as session:
         result = await session.execute(
             text(
                 """
                 SELECT id
                 FROM system.storage_providers
-                WHERE lower(provider_type) = 'supabase'
-                  AND is_active = true
+                WHERE lower(provider_type) = 'supabase_storage'
+                  AND is_active = TRUE
                 ORDER BY created_at ASC
                 LIMIT 1
                 """
@@ -139,6 +168,11 @@ async def get_storage_provider_id() -> UUID:
             raise RuntimeError(
                 "Active Supabase storage provider not found"
             )
+
+        logger.info(
+            "Resolved storage_provider_id=%s",
+            row["id"],
+        )
 
         return row["id"]
 
@@ -283,11 +317,17 @@ def create_extraction_object_storage(
 
 
 async def run_worker(worker_name: str) -> None:
+    configure_worker_logging()
+    logger.info(
+        "worker bootstrap name=%s",
+        worker_name,
+    )
     queues = create_ingest_queue_clients()
     dispatchers = create_ingest_dispatchers(queues)
 
     try:
         if worker_name == "discovery":
+            logger.info("worker creating name=discovery")
             data_hub_provider_resolver = (
                 create_data_hub_provider_resolver()
             )
@@ -301,6 +341,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
         elif worker_name == "download":
+            logger.info("worker creating name=download")
             token_provider = create_graph_token_provider()
             file_storage = create_file_storage()
             storage_provider_id = (
@@ -324,6 +365,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
         elif worker_name == "extraction":
+            logger.info("worker creating name=extraction")
             file_storage = create_file_storage()
             storage_provider_id = (
                 await get_storage_provider_id()
@@ -342,6 +384,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
         elif worker_name == "chunking":
+            logger.info("worker creating name=chunking")
             file_storage = create_file_storage()
 
             worker = create_chunking_worker(
@@ -351,11 +394,13 @@ async def run_worker(worker_name: str) -> None:
             )
 
         elif worker_name == "embedding":
+            logger.info("worker creating name=embedding")
             worker = create_embedding_worker(
                 queues=queues,
             )
 
         elif worker_name == "classification":
+            logger.info("worker creating name=classification")
             worker = create_classification_worker(
                 queues=queues,
             )
@@ -365,9 +410,24 @@ async def run_worker(worker_name: str) -> None:
                 f"Unknown worker: {worker_name}"
             )
 
+        logger.info(
+            "worker running name=%s",
+            worker_name,
+        )
         await worker.run()
 
+    except Exception:
+        logger.exception(
+            "worker crashed name=%s",
+            worker_name,
+        )
+        raise
+
     finally:
+        logger.info(
+            "worker closing name=%s",
+            worker_name,
+        )
         await close_ingest_queue_clients(
             queues,
         )

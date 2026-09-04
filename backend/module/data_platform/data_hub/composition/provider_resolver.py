@@ -24,10 +24,11 @@ class DataHubProviderResolver:
         self,
         provider: str,
         configuration: dict | None = None,
-    ):
-        provider_name = provider.strip().lower()
+    ):  
+        print("in ra provider", provider)
+        provider_code = provider.strip().lower()
 
-        if provider_name == "sharepoint":
+        if provider_code == "sharepoint":
             graph_client = MicrosoftGraphClient(
                 token_provider=self._token_provider,
                 base_url=settings.GRAPH_BASE_URL,

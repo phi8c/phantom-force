@@ -30,8 +30,7 @@ class DocumentMapper:
 
     @staticmethod
     def to_model(entity: Document) -> DocumentModel:
-        return DocumentModel(
-            id=entity.id,
+        values = dict(
             data_hub_id=entity.data_hub_id,
             external_file_id=entity.external_file_id,
             provider_metadata=entity.provider_metadata,
@@ -45,6 +44,17 @@ class DocumentMapper:
             file_size_bytes=entity.file_size_bytes,
             original_file_path=entity.original_file_path,
             last_modified_at=entity.last_modified_at,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
+        )
+
+        if entity.id is not None:
+            values["id"] = entity.id
+
+        if entity.created_at is not None:
+            values["created_at"] = entity.created_at
+
+        if entity.updated_at is not None:
+            values["updated_at"] = entity.updated_at
+
+        return DocumentModel(
+            **values,
         )

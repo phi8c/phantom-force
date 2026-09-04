@@ -1,4 +1,5 @@
 import os
+import logging
 import tempfile
 from datetime import datetime
 from datetime import timezone
@@ -29,6 +30,9 @@ from module.ingest.chunking.domain.contracts.unit_of_work import (
 from module.ingest.chunking.domain.enums.task_status import (
     TaskStatus,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkDocumentUseCase:
@@ -77,6 +81,13 @@ class ChunkDocumentUseCase:
             )
 
         try:
+            logger.info(
+                "chunking usecase_start task_id=%s job_id=%s document_id=%s",
+                task_id,
+                task.ingestion_job_id,
+                task.document_id,
+            )
+
             existing_batch = (
                 await self.chunk_batch_writer
                 .get_by_job_and_document(
@@ -88,6 +99,10 @@ class ChunkDocumentUseCase:
             )
 
             if existing_batch is None:
+                logger.info(
+                    "chunking extracted_open task_id=%s",
+                    task_id,
+                )
                 extracted_asset = (
                     await self.extracted_asset_reader
                     .open_extracted(
@@ -114,11 +129,23 @@ class ChunkDocumentUseCase:
                         )
                     )
 
-                    chunks = chunking_engine.chunk(
-                        ExtractedDocument(
-                            document_id=task.document_id,
-                            content_path=extracted_path,
+                    logger.info(
+                        "chunking engine_start task_id=%s",
+                        task_id,
+                    )
+                    chunks = list(
+                        chunking_engine.chunk(
+                            ExtractedDocument(
+                                document_id=task.document_id,
+                                content_path=extracted_path,
+                            )
                         )
+                    )
+
+                    logger.info(
+                        "chunking engine_done task_id=%s chunks=%s",
+                        task_id,
+                        len(chunks),
                     )
 
                     batch = await (
@@ -131,6 +158,11 @@ class ChunkDocumentUseCase:
                             chunks=chunks,
                         )
                     )
+                    logger.info(
+                        "chunking batch_saved task_id=%s batch_id=%s",
+                        task_id,
+                        batch.id,
+                    )
 
                 finally:
                     try:
@@ -142,7 +174,17 @@ class ChunkDocumentUseCase:
 
             else:
                 batch = existing_batch
+                logger.info(
+                    "chunking batch_reused task_id=%s batch_id=%s",
+                    task_id,
+                    batch.id,
+                )
 
+            logger.info(
+                "chunking downstream_schedule task_id=%s batch_id=%s",
+                task_id,
+                batch.id,
+            )
             signals = (
                 await self.downstream_task_scheduler
                 .schedule(
@@ -166,9 +208,17 @@ class ChunkDocumentUseCase:
                 task,
             )
 
+            logger.info(
+                "chunking commit task_id=%s",
+                task_id,
+            )
             await self.uow.commit()
 
             if signals.dispatch_embedding:
+                logger.info(
+                    "chunking dispatch_embedding job_id=%s",
+                    task.ingestion_job_id,
+                )
                 await (
                     self.downstream_task_scheduler
                     .dispatch_embedding(
@@ -177,6 +227,10 @@ class ChunkDocumentUseCase:
                 )
 
             if signals.dispatch_classification:
+                logger.info(
+                    "chunking dispatch_classification job_id=%s",
+                    task.ingestion_job_id,
+                )
                 await (
                     self.downstream_task_scheduler
                     .dispatch_classification(
@@ -185,6 +239,11 @@ class ChunkDocumentUseCase:
                 )
 
         except Exception as exc:
+            logger.exception(
+                "chunking failed task_id=%s error=%s",
+                task_id,
+                exc,
+            )
             await self.uow.rollback()
 
             task = await self.task_repository.get_by_id(
@@ -209,6 +268,12 @@ class ChunkDocumentUseCase:
                 )
 
                 await self.uow.commit()
+
+                logger.info(
+                    "chunking retry_state task_id=%s status=%s",
+                    task_id,
+                    task.status.value,
+                )
 
             raise
 

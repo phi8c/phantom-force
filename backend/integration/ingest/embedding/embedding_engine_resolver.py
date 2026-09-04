@@ -1,16 +1,24 @@
 from uuid import UUID
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from integration.ingest.embedding.legacy_embedding_engine import (
     LegacyEmbeddingEngineAdapter,
+)
+from module.ai.embedding_model.infrastructure.persistence.repositories.embedding_model_repository_impl import (
+    EmbeddingModelRepositoryImpl,
+)
+from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
+    IngestionConfigRepositoryImpl,
 )
 from module.ingest.embedding.domain.contracts.embedding_engine import (
     EmbeddingEngine,
 )
 from module.ingest.embedding.domain.contracts.embedding_engine_resolver import (
     EmbeddingEngineResolver,
+)
+from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_embedding_config_repository_impl import (
+    KnowledgeSpaceEmbeddingConfigRepositoryImpl,
 )
 
 
@@ -22,68 +30,85 @@ class DbEmbeddingEngineResolver(
         self,
         session: AsyncSession,
     ):
-        self._session = session
+        self._ingestion_config_repository = (
+            IngestionConfigRepositoryImpl(
+                session,
+            )
+        )
+        self._embedding_config_repository = (
+            KnowledgeSpaceEmbeddingConfigRepositoryImpl(
+                session,
+            )
+        )
+        self._embedding_model_repository = (
+            EmbeddingModelRepositoryImpl(
+                session,
+            )
+        )
 
     async def resolve_for_job(
         self,
         ingestion_job_id: UUID,
     ) -> EmbeddingEngine:
 
-        result = await self._session.execute(
-            text(
-                """
-                SELECT
-                    embedding_models.code,
-                    embedding_models.name,
-                    embedding_models.provider,
-                    embedding_models.dimension,
-                    embedding_models.configuration
-                        AS model_configuration,
-                    knowledge_space_embedding_configs.configuration
-                        AS embedding_configuration
-                FROM ingestion_jobs
-                JOIN knowledge_space_embedding_configs
-                  ON knowledge_space_embedding_configs.knowledge_space_id
-                   = ingestion_jobs.knowledge_space_id
-                JOIN embedding_models
-                  ON embedding_models.id
-                   = knowledge_space_embedding_configs.embedding_model_id
-                WHERE ingestion_jobs.id = :ingestion_job_id
-                  AND knowledge_space_embedding_configs.enabled = true
-                  AND embedding_models.enabled = true
-                LIMIT 1
-                """
-            ),
-            {
-                "ingestion_job_id": ingestion_job_id,
-            },
+        job = await self._ingestion_config_repository.get_job_by_id(
+            ingestion_job_id,
         )
 
-        row = result.mappings().one_or_none()
+        if job is None:
+            raise ValueError(
+                "Ingestion job is not available"
+            )
 
-        if row is None:
+        embedding_config = (
+            await self._embedding_config_repository
+            .get_by_knowledge_space_id(
+                job.knowledge_space_id,
+            )
+        )
+
+        if (
+            embedding_config is None
+            or not embedding_config.enabled
+        ):
             raise ValueError(
                 "Embedding configuration is not available "
                 "for this ingestion job"
             )
 
+        embedding_model = (
+            await self._embedding_model_repository
+            .get_by_id(
+                embedding_config.embedding_model_id,
+            )
+        )
+
+        if (
+            embedding_model is None
+            or not embedding_model.enabled
+        ):
+            raise ValueError(
+                "Embedding model is not available "
+                "or disabled"
+            )
+
         configuration = {
             **(
-                row["model_configuration"]
+                embedding_model.configuration
                 or {}
             ),
             **(
-                row["embedding_configuration"]
+                embedding_config.configuration
                 or {}
             ),
         }
 
         return self._create_engine(
-            code=row["code"],
-            provider=row["provider"],
+            code=embedding_model.code,
+            provider=embedding_model.provider,
             model_name=configuration.get(
                 "model_name",
-                row["code"],
+                embedding_model.code,
             ),
             deployment=configuration.get(
                 "deployment",
@@ -94,7 +119,7 @@ class DbEmbeddingEngineResolver(
             or configuration.get(
                 "azure_deployment",
             )
-            or row["code"],
+            or embedding_model.code,
         )
 
     def _create_engine(

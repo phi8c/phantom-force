@@ -20,6 +20,9 @@ from module.ingest.classification.infrastructure.persistence.mappers.chunk_class
 from module.ingest.classification.infrastructure.persistence.models.chunk_classification_model import (
     ChunkClassificationModel,
 )
+from module.ingest.chunking.infrastructure.persistence.models.document_chunk_model import (
+    DocumentChunkModel,
+)
 
 
 class ChunkClassificationRepositoryImpl(
@@ -39,8 +42,12 @@ class ChunkClassificationRepositoryImpl(
 
         statement = select(
             ChunkClassificationModel
+        ).join(
+            DocumentChunkModel,
+            DocumentChunkModel.id
+            == ChunkClassificationModel.chunk_id,
         ).where(
-            ChunkClassificationModel.batch_id
+            DocumentChunkModel.batch_id
             == batch_id,
         )
 
@@ -70,19 +77,15 @@ class ChunkClassificationRepositoryImpl(
                     classification.id
                     or uuid4()
                 ),
-                "batch_id": classification.batch_id,
                 "chunk_id": classification.chunk_id,
-                "sensitivity": classification.sensitivity,
-                "metadata_payload": (
-                    classification.metadata
-                    or {}
+                "model_name": classification.model_name,
+                "label": classification.label,
+                "confidence": classification.confidence,
+                "raw_response": (
+                    classification.raw_response
                 ),
                 "created_at": (
                     classification.created_at
-                    or now
-                ),
-                "updated_at": (
-                    classification.updated_at
                     or now
                 ),
             }
@@ -100,15 +103,17 @@ class ChunkClassificationRepositoryImpl(
 
         statement = statement.on_conflict_do_update(
             index_elements=[
-                "batch_id",
                 "chunk_id",
+                "model_name",
             ],
             set_={
-                "sensitivity": statement.excluded.sensitivity,
-                "metadata_payload": (
-                    statement.excluded.metadata_payload
+                "label": statement.excluded.label,
+                "confidence": (
+                    statement.excluded.confidence
                 ),
-                "updated_at": statement.excluded.updated_at,
+                "raw_response": (
+                    statement.excluded.raw_response
+                ),
             },
         ).returning(
             ChunkClassificationModel

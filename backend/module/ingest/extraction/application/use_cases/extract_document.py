@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -31,6 +32,9 @@ from module.ingest.extraction.domain.contracts.unit_of_work import (
 from module.ingest.extraction.domain.enums.task_status import (
     TaskStatus,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractDocumentUseCase:
@@ -83,15 +87,36 @@ class ExtractDocumentUseCase:
         temp_path: Path | None = None
 
         try:
+            logger.info(
+                "extraction usecase_start task_id=%s job_id=%s document_id=%s",
+                task_id,
+                task.ingestion_job_id,
+                task.document_id,
+            )
+
+            storage_path = (
+                self._build_storage_path(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                )
+            )
+
             existing_asset = (
                 await self.storage_asset_repository
-                .get_by_document_and_type(
+                .get_by_document_type_and_path(
                     document_id=task.document_id,
                     asset_type="EXTRACTED",
+                    storage_path=storage_path,
                 )
             )
 
             if existing_asset is None:
+                logger.info(
+                    "extraction source_open document_id=%s",
+                    task.document_id,
+                )
                 source_asset = (
                     await self.source_asset_reader
                     .open_source(
@@ -113,65 +138,119 @@ class ExtractDocumentUseCase:
                     )
                 )
 
+                logger.info(
+                    "extraction engine_start task_id=%s job_id=%s",
+                    task_id,
+                    task.ingestion_job_id,
+                )
+
                 extraction_result = (
                     await extraction_engine.extract(
                         temp_path,
                     )
                 )
 
-                storage_path = (
-                    self._build_storage_path(
-                        ingestion_job_id=(
-                            task.ingestion_job_id
-                        ),
-                        document_id=task.document_id,
-                    )
+                logger.info(
+                    "extraction engine_done task_id=%s content_type=%s",
+                    task_id,
+                    extraction_result.content_type,
                 )
 
-                stored_object = (
-                    await self.object_storage
-                    .upload_stream(
-                        path=storage_path,
-                        content=(
-                            self._json_stream(
-                                extraction_result.content
-                            )
-                        ),
-                        content_type=(
-                            extraction_result
-                            .content_type
-                        ),
+                if (
+                    extraction_result.content
+                    is None
+                ):
+                    raise ValueError(
+                        "Extraction result content is required"
                     )
-                )
+
+                if not extraction_result.content_type:
+                    raise ValueError(
+                        "Extraction result content_type is required"
+                    )
 
                 existing_asset = (
                     await self.storage_asset_repository
-                    .create(
-                        StorageAsset(
-                            id=None,
-                            document_id=(
-                                task.document_id
-                            ),
-                            storage_provider_id=(
-                                stored_object
-                                .provider_id
-                            ),
-                            asset_type="EXTRACTED",
-                            storage_path=(
-                                stored_object.path
+                    .get_by_document_type_and_path(
+                        document_id=task.document_id,
+                        asset_type="EXTRACTED",
+                        storage_path=storage_path,
+                    )
+                )
+
+                if existing_asset is None:
+                    logger.info(
+                        "extraction upload_start task_id=%s path=%s",
+                        task_id,
+                        storage_path,
+                    )
+                    stored_object = (
+                        await self.object_storage
+                        .upload_stream(
+                            path=storage_path,
+                            content=(
+                                self._json_stream(
+                                    extraction_result.content
+                                )
                             ),
                             content_type=(
-                                stored_object
+                                extraction_result
                                 .content_type
-                                or extraction_result
-                                .content_type
-                            ),
-                            size_bytes=(
-                                stored_object
-                                .size_bytes
                             ),
                         )
                     )
+
+                    logger.info(
+                        "extraction upload_done task_id=%s path=%s",
+                        task_id,
+                        stored_object.path,
+                    )
+
+                    if stored_object.path != storage_path:
+                        raise ValueError(
+                            "Stored extracted asset path mismatch"
+                        )
+
+                    existing_asset = (
+                        await self.storage_asset_repository
+                        .create(
+                            StorageAsset(
+                                id=None,
+                                document_id=(
+                                    task.document_id
+                                ),
+                                storage_provider_id=(
+                                    stored_object
+                                    .provider_id
+                                ),
+                                asset_type="EXTRACTED",
+                                storage_path=(
+                                    stored_object.path
+                                ),
+                                content_type=(
+                                    stored_object
+                                    .content_type
+                                    or extraction_result
+                                    .content_type
+                                ),
+                                size_bytes=(
+                                    stored_object
+                                    .size_bytes
+                                ),
+                            )
+                        )
+                    )
+                    logger.info(
+                        "extraction asset_saved task_id=%s asset_id=%s",
+                        task_id,
+                        existing_asset.id,
+                    )
+            else:
+                logger.info(
+                    "extraction asset_reused task_id=%s asset_id=%s path=%s",
+                    task_id,
+                    existing_asset.id,
+                    existing_asset.storage_path,
                 )
 
             if existing_asset.id is None:
@@ -179,18 +258,16 @@ class ExtractDocumentUseCase:
                     "Extracted asset id was not generated"
                 )
 
-            await (
-                self.chunking_task_scheduler
-                .ensure_ready_task(
-                    ingestion_job_id=(
-                        task.ingestion_job_id
-                    ),
-                    document_id=task.document_id,
-                    extracted_asset_id=(
-                        existing_asset.id
-                    ),
+            if (
+                existing_asset.asset_type != "EXTRACTED"
+                or existing_asset.document_id
+                != task.document_id
+                or existing_asset.storage_path
+                != storage_path
+            ):
+                raise ValueError(
+                    "Extracted asset does not match task"
                 )
-            )
 
             task.status = TaskStatus.COMPLETED
             task.claimed_by = None
@@ -204,8 +281,34 @@ class ExtractDocumentUseCase:
                 task,
             )
 
+            logger.info(
+                "extraction schedule_chunking task_id=%s asset_id=%s",
+                task_id,
+                existing_asset.id,
+            )
+            await (
+                self.chunking_task_scheduler
+                .ensure_ready_task(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    extracted_asset_id=(
+                        existing_asset.id
+                    ),
+                )
+            )
+
+            logger.info(
+                "extraction commit task_id=%s",
+                task_id,
+            )
             await self.uow.commit()
 
+            logger.info(
+                "extraction dispatch_chunking job_id=%s",
+                task.ingestion_job_id,
+            )
             await (
                 self.chunking_task_scheduler
                 .dispatch_job(
@@ -214,6 +317,11 @@ class ExtractDocumentUseCase:
             )
 
         except Exception as exc:
+            logger.exception(
+                "extraction failed task_id=%s error=%s",
+                task_id,
+                exc,
+            )
             await self.uow.rollback()
 
             task = await self.task_repository.get_by_id(
@@ -238,6 +346,12 @@ class ExtractDocumentUseCase:
                 )
 
                 await self.uow.commit()
+
+                logger.info(
+                    "extraction retry_state task_id=%s status=%s",
+                    task_id,
+                    task.status.value,
+                )
 
             raise
 

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import socket
 from typing import AsyncContextManager
 from collections.abc import Callable
@@ -11,6 +12,9 @@ from uuid import UUID
 from module.ingest.download.application.use_cases.download_file import (
     DownloadFileUseCase,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadWorker:
@@ -25,6 +29,7 @@ class DownloadWorker:
                 DownloadFileUseCase
             ],
         ],
+        extraction_dispatcher,
         claim_size: int = 20,
         lease_seconds: int = 300,
         max_concurrency: int = 5,
@@ -34,6 +39,9 @@ class DownloadWorker:
             claim_scope_factory
         )
         self.use_case_factory = use_case_factory
+        self.extraction_dispatcher = (
+            extraction_dispatcher
+        )
         self.claim_size = claim_size
         self.lease_seconds = lease_seconds
         self.semaphore = asyncio.Semaphore(
@@ -45,13 +53,28 @@ class DownloadWorker:
         self,
     ) -> None:
 
+        logger.info(
+            "download started worker_id=%s claim_size=%s lease_seconds=%s",
+            self.worker_id,
+            self.claim_size,
+            self.lease_seconds,
+        )
+
         while True:
-            messages = await (
-                self.queue_client.receive_messages(
-                    max_message_count=1,
-                    max_wait_time=5,
+            try:
+                messages = await (
+                    self.queue_client.receive_messages(
+                        max_message_count=1,
+                        max_wait_time=5,
+                    )
                 )
-            )
+
+            except Exception:
+                logger.exception(
+                    "download receive_failed"
+                )
+                await asyncio.sleep(5)
+                continue
 
             found_message = bool(messages)
 
@@ -59,6 +82,10 @@ class DownloadWorker:
                 try:
                     payload = json.loads(
                         str(message)
+                    )
+                    logger.info(
+                        "download received payload=%s",
+                        payload,
                     )
 
                     ingestion_job_id = UUID(
@@ -96,6 +123,11 @@ class DownloadWorker:
                         )
 
                         await uow.commit()
+                        logger.info(
+                            "download claimed job_id=%s tasks=%s",
+                            ingestion_job_id,
+                            len(tasks),
+                        )
 
                     await asyncio.gather(
                         *[
@@ -108,14 +140,31 @@ class DownloadWorker:
                         ]
                     )
 
+                    if tasks:
+                        logger.info(
+                            "download dispatch_extraction job_id=%s tasks=%s",
+                            ingestion_job_id,
+                            len(tasks),
+                        )
+                        await self.extraction_dispatcher.dispatch(
+                            ingestion_job_id,
+                        )
+
                     await (
                         self.queue_client
                         .complete_message(
                             message,
                         )
                     )
+                    logger.info(
+                        "download completed job_id=%s",
+                        ingestion_job_id,
+                    )
 
                 except Exception:
+                    logger.exception(
+                        "download failed"
+                    )
                     continue
 
             if not found_message:
@@ -128,6 +177,14 @@ class DownloadWorker:
 
         async with self.semaphore:
             async with self.use_case_factory() as use_case:
+                logger.info(
+                    "download task_start task_id=%s",
+                    task_id,
+                )
                 await use_case.execute(
                     task_id
+                )
+                logger.info(
+                    "download task_done task_id=%s",
+                    task_id,
                 )

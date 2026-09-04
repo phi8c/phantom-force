@@ -27,6 +27,16 @@ class StorageAssetRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_by_document_type_and_path(
+        self,
+        *,
+        document_id: UUID,
+        asset_type: str,
+        storage_path: str,
+    ) -> StorageAsset | None:
+        pass
+
+    @abstractmethod
     async def create(
         self,
         asset: StorageAsset,

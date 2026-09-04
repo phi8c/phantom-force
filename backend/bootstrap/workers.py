@@ -174,6 +174,9 @@ def create_download_worker(
                 dispatchers.extraction
             ),
         ),
+        extraction_dispatcher=(
+            dispatchers.extraction
+        ),
     )
 
 

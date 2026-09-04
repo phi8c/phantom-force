@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import AsyncContextManager
 from collections.abc import Callable
 from uuid import UUID
@@ -10,6 +11,9 @@ from module.ingest.discovery.application.dtos.requests.discover_batch_request im
 from module.ingest.discovery.application.use_cases.discover_batch import (
     DiscoverBatchUseCase,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class DiscoveryWorker:
@@ -35,20 +39,36 @@ class DiscoveryWorker:
         self,
     ) -> None:
 
+        logger.info("discovery started")
+
         while True:
 
-            messages = await (
-                self.queue_client.receive_messages(
-                    max_message_count=1,
-                    max_wait_time=5,
+            try:
+                messages = await (
+                    self.queue_client.receive_messages(
+                        max_message_count=1,
+                        max_wait_time=5,
+                    )
                 )
-            )
+
+            except Exception:
+                logger.exception(
+                    "discovery receive_failed"
+                )
+                await asyncio.sleep(
+                    5
+                )
+                continue
 
             for message in messages:
 
                 try:
                     payload = json.loads(
                         str(message)
+                    )
+                    logger.info(
+                        "discovery received payload=%s",
+                        payload,
                     )
 
                     request = DiscoverBatchRequest(
@@ -68,14 +88,30 @@ class DiscoveryWorker:
                     async with (
                         self.use_case_factory()
                     ) as use_case:
+                        logger.info(
+                            "discovery batch_start job_id=%s batch_size=%s",
+                            request.ingestion_job_id,
+                            request.batch_size,
+                        )
                         response = (
                             await use_case.execute(
                                 request
                             )
                         )
+                        logger.info(
+                            "discovery batch_done job_id=%s items=%s has_more=%s",
+                            request.ingestion_job_id,
+                            len(response.items),
+                            response.has_more,
+                        )
 
                     # còn Discovery workload
                     if response.has_more:
+                        logger.info(
+                            "discovery redispatch job_id=%s batch_size=%s",
+                            request.ingestion_job_id,
+                            request.batch_size,
+                        )
                         await (
                             self.discovery_dispatcher
                             .dispatch(
@@ -94,11 +130,15 @@ class DiscoveryWorker:
                             message,
                         )
                     )
+                    logger.info(
+                        "discovery completed job_id=%s",
+                        request.ingestion_job_id,
+                    )
 
                 except Exception:
-                    # Không delete message.
-                    # Azure Queue sẽ visible lại
-                    # sau visibility timeout.
+                    logger.exception(
+                        "discovery failed"
+                    )
                     continue
 
             await asyncio.sleep(

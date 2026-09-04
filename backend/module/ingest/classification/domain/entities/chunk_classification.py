@@ -6,9 +6,9 @@ from uuid import UUID
 @dataclass
 class ChunkClassification:
     id: UUID | None
-    batch_id: UUID
     chunk_id: UUID
-    sensitivity: int
-    metadata: dict
+    model_name: str
+    label: str
+    confidence: float | None
+    raw_response: dict | None
     created_at: datetime | None
-    updated_at: datetime | None

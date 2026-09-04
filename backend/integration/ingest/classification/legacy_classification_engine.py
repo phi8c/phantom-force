@@ -1,7 +1,11 @@
+from collections.abc import Sequence
 from typing import Any
 
 from module.ingest.classification.application.dtos.schemas.engine import (
-    ClassificationEngine as LegacyClassificationEngine,
+    ClassificationEngine as LegacyClassificationEngineContract,
+)
+from module.ingest.classification.application.dtos.schemas.engine import (
+    ClassificationResult as LegacyClassificationResult,
 )
 from module.ingest.classification.application.dtos.schemas.schemas import (
     Chunk as LegacyChunk,
@@ -16,15 +20,45 @@ from module.ingest.classification.domain.contracts.classification_engine import 
 )
 
 
+class RuleBasedLegacyClassificationEngine(
+    LegacyClassificationEngineContract,
+):
+
+    async def classify(
+        self,
+        chunks: Sequence[LegacyChunk],
+    ) -> Sequence[LegacyClassificationResult]:
+
+        return [
+            LegacyClassificationResult(
+                chunk_id=chunk.id,
+                sensitivity=1,
+                metadata={
+                    "label": "public",
+                    "confidence": 1.0,
+                    "model_name": "rule_based_default",
+                    "raw_response": None,
+                },
+            )
+            for chunk in chunks
+        ]
+
+
 class LegacyClassificationEngineAdapter(
     ClassificationEngine,
 ):
 
     def __init__(
         self,
-        engine: LegacyClassificationEngine | None = None,
+        engine: (
+            LegacyClassificationEngineContract
+            | None
+        ) = None,
     ):
-        self._engine = engine or LegacyClassificationEngine()
+        self._engine = (
+            engine
+            or RuleBasedLegacyClassificationEngine()
+        )
 
     async def classify_batch(
         self,
@@ -40,17 +74,23 @@ class LegacyClassificationEngineAdapter(
             for chunk in chunks
         ]
 
-        results = await self._engine.classify_batch(
+        results = await self._engine.classify(
             legacy_chunks,
         )
 
         return [
             ClassificationResult(
                 chunk_id=result.chunk_id,
-                sensitivity=self._sensitivity_from_label(
-                    result.label,
+                model_name=self._model_name_from_result(
+                    result,
                 ),
-                metadata=self._metadata_from_result(
+                label=self._label_from_result(
+                    result,
+                ),
+                confidence=self._confidence_from_result(
+                    result,
+                ),
+                raw_response=self._raw_response_from_result(
                     result,
                 ),
             )
@@ -58,46 +98,89 @@ class LegacyClassificationEngineAdapter(
         ]
 
     @staticmethod
-    def _sensitivity_from_label(
-        label: str | None,
-    ) -> int:
+    def _model_name_from_result(
+        result,
+    ) -> str:
 
-        normalized = (
-            label
-            or ""
-        ).strip().lower()
+        metadata = dict(
+            result.metadata
+            or {}
+        )
 
-        if normalized in {
-            "secret",
-            "critical",
-            "highly_confidential",
-        }:
-            return 4
+        model_name = metadata.get(
+            "model_name",
+        )
 
-        if normalized in {
-            "confidential",
-            "restricted",
-            "high",
-            "sensitive",
-        }:
-            return 3
+        if model_name:
+            return str(model_name)
 
-        if normalized in {
-            "internal",
-            "medium",
-        }:
-            return 2
-
-        return 1
+        return "legacy_classification_engine"
 
     @staticmethod
-    def _metadata_from_result(
+    def _label_from_result(
         result,
-    ) -> dict[str, Any]:
+    ) -> str:
+
+        metadata = dict(
+            result.metadata
+            or {}
+        )
+
+        label = metadata.get(
+            "label",
+        )
+
+        if label:
+            return str(label)
+
+        return (
+            "public"
+            if result.sensitivity <= 1
+            else "sensitive"
+        )
+
+    @staticmethod
+    def _confidence_from_result(
+        result,
+    ) -> float | None:
+
+        metadata = dict(
+            result.metadata
+            or {}
+        )
+
+        confidence = metadata.get(
+            "confidence",
+        )
+
+        if confidence is None:
+            return None
+
+        return float(confidence)
+
+    @staticmethod
+    def _raw_response_from_result(
+        result,
+    ) -> dict[str, Any] | None:
+
+        metadata = dict(
+            result.metadata
+            or {}
+        )
+
+        raw_response = metadata.get(
+            "raw_response",
+        )
+
+        if raw_response is None:
+            return metadata
+
+        if isinstance(
+            raw_response,
+            dict,
+        ):
+            return raw_response
 
         return {
-            "label": result.label,
-            "confidence": result.confidence,
-            "model_name": result.model_name,
-            "raw_response": result.raw_response,
+            "value": raw_response,
         }

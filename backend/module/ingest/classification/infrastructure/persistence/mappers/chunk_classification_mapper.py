@@ -15,12 +15,12 @@ class ChunkClassificationMapper:
 
         return ChunkClassification(
             id=model.id,
-            batch_id=model.batch_id,
             chunk_id=model.chunk_id,
-            sensitivity=model.sensitivity,
-            metadata=model.metadata_payload,
+            model_name=model.model_name,
+            label=model.label,
+            confidence=model.confidence,
+            raw_response=model.raw_response,
             created_at=model.created_at,
-            updated_at=model.updated_at,
         )
 
     @staticmethod
@@ -28,12 +28,20 @@ class ChunkClassificationMapper:
         entity: ChunkClassification,
     ) -> ChunkClassificationModel:
 
+        values = {
+            "chunk_id": entity.chunk_id,
+            "model_name": entity.model_name,
+            "label": entity.label,
+            "confidence": entity.confidence,
+            "raw_response": entity.raw_response,
+        }
+
+        if entity.id is not None:
+            values["id"] = entity.id
+
+        if entity.created_at is not None:
+            values["created_at"] = entity.created_at
+
         return ChunkClassificationModel(
-            id=entity.id,
-            batch_id=entity.batch_id,
-            chunk_id=entity.chunk_id,
-            sensitivity=entity.sensitivity,
-            metadata_payload=entity.metadata,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
+            **values,
         )

@@ -21,8 +21,8 @@ class ExtractionStrategyMapper:
             provider=model.provider,
             configuration=model.configuration,
             enabled=model.enabled,
-            created_at=model.created_at,
-            updated_at=model.updated_at,
+            created_at=None,
+            updated_at=None,
         )
 
     @staticmethod
@@ -37,6 +37,4 @@ class ExtractionStrategyMapper:
             provider=entity.provider,
             configuration=entity.configuration,
             enabled=entity.enabled,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
         )

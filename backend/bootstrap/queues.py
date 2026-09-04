@@ -31,12 +31,6 @@ class IngestQueueClients:
     chunking: object
     embedding: object
     classification: object
-    discovery_sender: object
-    download_sender: object
-    extraction_sender: object
-    chunking_sender: object
-    embedding_sender: object
-    classification_sender: object
 
 
 @dataclass(frozen=True)
@@ -91,24 +85,6 @@ def create_ingest_queue_clients() -> IngestQueueClients:
         classification=service_bus_client.get_queue_receiver(
             queue_name=settings.AZURE_SERVICE_BUS_CLASSIFY_QUEUE,
         ),
-        discovery_sender=service_bus_client.get_queue_sender(
-            queue_name=discovery_queue_name,
-        ),
-        download_sender=service_bus_client.get_queue_sender(
-            queue_name=settings.AZURE_SERVICE_BUS_DOWNLOAD_QUEUE,
-        ),
-        extraction_sender=service_bus_client.get_queue_sender(
-            queue_name=settings.AZURE_SERVICE_BUS_EXTRACT_QUEUE,
-        ),
-        chunking_sender=service_bus_client.get_queue_sender(
-            queue_name=settings.AZURE_SERVICE_BUS_CHUNK_QUEUE,
-        ),
-        embedding_sender=service_bus_client.get_queue_sender(
-            queue_name=settings.AZURE_SERVICE_BUS_EMBED_QUEUE,
-        ),
-        classification_sender=service_bus_client.get_queue_sender(
-            queue_name=settings.AZURE_SERVICE_BUS_CLASSIFY_QUEUE,
-        ),
     )
 
 
@@ -118,22 +94,41 @@ def create_ingest_dispatchers(
 
     return IngestDispatchers(
         discovery=AzureDiscoveryDispatcher(
-            clients.discovery_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_QUEUE_NAME
+                or settings.AZURE_SERVICE_BUS_DOWNLOAD_QUEUE
+            ),
         ),
         download=AzureDownloadDispatcher(
-            clients.download_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_DOWNLOAD_QUEUE
+            ),
         ),
         extraction=AzureExtractionDispatcher(
-            clients.extraction_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_EXTRACT_QUEUE
+            ),
         ),
         chunking=AzureChunkingDispatcher(
-            clients.chunking_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_CHUNK_QUEUE
+            ),
         ),
         embedding=AzureEmbeddingDispatcher(
-            clients.embedding_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_EMBED_QUEUE
+            ),
         ),
         classification=AzureClassificationDispatcher(
-            clients.classification_sender,
+            service_bus_client=clients.service_bus_client,
+            queue_name=(
+                settings.AZURE_SERVICE_BUS_CLASSIFY_QUEUE
+            ),
         ),
     )
 
@@ -149,12 +144,6 @@ async def close_ingest_queue_clients(
         clients.chunking,
         clients.embedding,
         clients.classification,
-        clients.discovery_sender,
-        clients.download_sender,
-        clients.extraction_sender,
-        clients.chunking_sender,
-        clients.embedding_sender,
-        clients.classification_sender,
         clients.service_bus_client,
     ):
         close = getattr(

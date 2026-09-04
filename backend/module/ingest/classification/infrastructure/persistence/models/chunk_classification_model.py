@@ -1,10 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
+from sqlalchemy import Float
 from sqlalchemy import ForeignKey
-from sqlalchemy import Integer
+from sqlalchemy import String
 from sqlalchemy import UniqueConstraint
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -18,17 +18,13 @@ from shared.database.base import Base
 class ChunkClassificationModel(
     Base,
 ):
-    __tablename__ = "chunk_classifications"
+    __tablename__ = "document_chunk_classifications"
 
     __table_args__ = (
         UniqueConstraint(
-            "batch_id",
             "chunk_id",
-            name="uq_chunk_classifications_batch_chunk",
-        ),
-        CheckConstraint(
-            "sensitivity >= 1",
-            name="ck_chunk_classifications_sensitivity",
+            "model_name",
+            name="uq_document_chunk_classifications_chunk_model",
         ),
     )
 
@@ -36,15 +32,6 @@ class ChunkClassificationModel(
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=func.gen_random_uuid(),
-    )
-
-    batch_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey(
-            "document_chunk_batches.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
     )
 
     chunk_id: Mapped[UUID] = mapped_column(
@@ -56,26 +43,27 @@ class ChunkClassificationModel(
         nullable=False,
     )
 
-    sensitivity: Mapped[int] = mapped_column(
-        Integer,
+    model_name: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
-        default=1,
     )
 
-    metadata_payload: Mapped[dict] = mapped_column(
-        "metadata",
-        JSONB,
+    label: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
-        default=dict,
+    )
+
+    confidence: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    raw_response: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),

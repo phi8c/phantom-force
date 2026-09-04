@@ -87,6 +87,47 @@ class ModuleStorageAssetRepository(
             model,
         )
 
+    async def get_by_document_type_and_path(
+        self,
+        *,
+        document_id: UUID,
+        asset_type: str,
+        storage_path: str,
+    ) -> StorageAsset | None:
+
+        statement = (
+            select(
+                StorageAssetModel
+            )
+            .where(
+                StorageAssetModel.document_id
+                == document_id,
+                StorageAssetModel.asset_type
+                == asset_type,
+                StorageAssetModel.storage_path
+                == storage_path,
+            )
+            .order_by(
+                StorageAssetModel.created_at.desc(),
+            )
+            .limit(
+                1,
+            )
+        )
+
+        result = await self.session.execute(
+            statement,
+        )
+
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._to_entity(
+            model,
+        )
+
     @staticmethod
     def _to_entity(
         model: StorageAssetModel,

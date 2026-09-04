@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from integration.ingest.chunking.factory import (
     create_chunk_document_use_case_scope_with_downstream,
 )
@@ -18,6 +20,67 @@ from integration.ingest.extraction.factory import (
 )
 
 from bootstrap.database import async_session_factory
+from module.ingest.config.application.use_cases.start_ingestion import (
+    StartIngestionUseCase,
+)
+from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
+    IngestionConfigRepositoryImpl,
+)
+from module.ingest.config.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SQLAlchemyUnitOfWork as IngestionConfigUnitOfWork,
+)
+from module.ingest.master.chunking_strategy.infrastructure.persistence.repositories.chunking_strategy_repository_impl import (
+    ChunkingStrategyRepositoryImpl,
+)
+from module.ingest.master.extraction_strategy.infrastructure.persistence.repositories.extraction_strategy_repository_impl import (
+    ExtractionStrategyRepositoryImpl,
+)
+from module.ingest.master.model_set.infrastructure.persistence.repositories.model_set_repository_impl import (
+    ModelSetRepositoryImpl,
+)
+from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_repository_impl import (
+    KnowledgeSpaceRepositoryImpl,
+)
+
+
+@asynccontextmanager
+async def start_ingestion_use_case_scope(
+    *,
+    discovery_dispatcher,
+):
+
+    async with async_session_factory() as session:
+        yield StartIngestionUseCase(
+            knowledge_space_repository=(
+                KnowledgeSpaceRepositoryImpl(
+                    session,
+                )
+            ),
+            ingestion_config_repository=(
+                IngestionConfigRepositoryImpl(
+                    session,
+                )
+            ),
+            extraction_strategy_repository=(
+                ExtractionStrategyRepositoryImpl(
+                    session,
+                )
+            ),
+            chunking_strategy_repository=(
+                ChunkingStrategyRepositoryImpl(
+                    session,
+                )
+            ),
+            model_set_repository=(
+                ModelSetRepositoryImpl(
+                    session,
+                )
+            ),
+            discovery_dispatcher=discovery_dispatcher,
+            uow=IngestionConfigUnitOfWork(
+                session,
+            ),
+        )
 
 
 def download_use_case_scope(

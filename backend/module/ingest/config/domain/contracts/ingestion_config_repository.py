@@ -35,3 +35,17 @@ class IngestionConfigRepository(ABC):
         IngestionJobConfiguration,
     ] | None:
         pass
+
+    @abstractmethod
+    async def add_job(
+        self,
+        job: IngestionJob,
+    ) -> IngestionJob:
+        pass
+
+    @abstractmethod
+    async def add_configuration(
+        self,
+        configuration: IngestionJobConfiguration,
+    ) -> IngestionJobConfiguration:
+        pass

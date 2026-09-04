@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import socket
 from typing import AsyncContextManager
 from collections.abc import Callable
@@ -11,6 +12,9 @@ from uuid import UUID
 from module.ingest.chunking.application.use_cases.chunk_document import (
     ChunkDocumentUseCase,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkingWorker:
@@ -45,13 +49,28 @@ class ChunkingWorker:
         self,
     ) -> None:
 
+        logger.info(
+            "chunking started worker_id=%s claim_size=%s lease_seconds=%s",
+            self.worker_id,
+            self.claim_size,
+            self.lease_seconds,
+        )
+
         while True:
-            messages = await (
-                self.queue_client.receive_messages(
-                    max_message_count=1,
-                    max_wait_time=5,
+            try:
+                messages = await (
+                    self.queue_client.receive_messages(
+                        max_message_count=1,
+                        max_wait_time=5,
+                    )
                 )
-            )
+
+            except Exception:
+                logger.exception(
+                    "chunking receive_failed"
+                )
+                await asyncio.sleep(5)
+                continue
 
             found_message = bool(messages)
 
@@ -59,6 +78,10 @@ class ChunkingWorker:
                 try:
                     payload = json.loads(
                         str(message)
+                    )
+                    logger.info(
+                        "chunking received payload=%s",
+                        payload,
                     )
 
                     ingestion_job_id = UUID(
@@ -96,6 +119,11 @@ class ChunkingWorker:
                         )
 
                         await uow.commit()
+                        logger.info(
+                            "chunking claimed job_id=%s tasks=%s",
+                            ingestion_job_id,
+                            len(tasks),
+                        )
 
                     await asyncio.gather(
                         *[
@@ -114,8 +142,15 @@ class ChunkingWorker:
                             message,
                         )
                     )
+                    logger.info(
+                        "chunking completed job_id=%s",
+                        ingestion_job_id,
+                    )
 
                 except Exception:
+                    logger.exception(
+                        "chunking failed"
+                    )
                     continue
 
             if not found_message:
@@ -128,6 +163,14 @@ class ChunkingWorker:
 
         async with self.semaphore:
             async with self.use_case_factory() as use_case:
+                logger.info(
+                    "chunking task_start task_id=%s",
+                    task_id,
+                )
                 await use_case.execute(
+                    task_id,
+                )
+                logger.info(
+                    "chunking task_done task_id=%s",
                     task_id,
                 )

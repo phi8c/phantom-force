@@ -3,12 +3,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from module.knowledge_space.domain.contracts.knowledge_space_data_hub_repository import (
-    KnowledgeSpaceDataHubRepository,
-)
-from module.knowledge_space.domain.contracts.knowledge_space_embedding_config_repository import (
-    KnowledgeSpaceEmbeddingConfigRepository,
-)
 from module.knowledge_space.domain.contracts.knowledge_space_repository import (
     KnowledgeSpaceRepository,
 )
@@ -16,29 +10,11 @@ from module.knowledge_space.domain.contracts.knowledge_space_repository import (
 from module.knowledge_space.domain.entities.knowledge_space import (
     KnowledgeSpace,
 )
-from module.knowledge_space.domain.entities.knowledge_space_data_hub import (
-    KnowledgeSpaceDataHub,
-)
-from module.knowledge_space.domain.entities.knowledge_space_embedding_config import (
-    KnowledgeSpaceEmbeddingConfig,
-)
 
-from module.knowledge_space.infrastructure.persistence.mappers.knowledge_space_data_hub_mapper import (
-    KnowledgeSpaceDataHubMapper,
-)
-from module.knowledge_space.infrastructure.persistence.mappers.knowledge_space_embedding_config_mapper import (
-    KnowledgeSpaceEmbeddingConfigMapper,
-)
 from module.knowledge_space.infrastructure.persistence.mappers.knowledge_space_mapper import (
     KnowledgeSpaceMapper,
 )
 
-from module.knowledge_space.infrastructure.persistence.models.knowledge_space_data_hub_model import (
-    KnowledgeSpaceDataHubModel,
-)
-from module.knowledge_space.infrastructure.persistence.models.knowledge_space_embedding_config_model import (
-    KnowledgeSpaceEmbeddingConfigModel,
-)
 from module.knowledge_space.infrastructure.persistence.models.knowledge_space_model import (
     KnowledgeSpaceModel,
 )
@@ -46,8 +22,6 @@ from module.knowledge_space.infrastructure.persistence.models.knowledge_space_mo
 
 class KnowledgeSpaceRepositoryImpl(
     KnowledgeSpaceRepository,
-    KnowledgeSpaceDataHubRepository,
-    KnowledgeSpaceEmbeddingConfigRepository,
 ):
 
     def __init__(
@@ -102,9 +76,3 @@ class KnowledgeSpaceRepositoryImpl(
             model,
         )
 
-    async def get_by_knowledge_space_id(
-        self,
-        knowledge_space_id: UUID,
-    ) -> KnowledgeSpaceDataHub | KnowledgeSpaceEmbeddingConfig | None:
-
-        raise NotImplementedError

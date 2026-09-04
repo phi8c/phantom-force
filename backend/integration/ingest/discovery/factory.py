@@ -30,8 +30,8 @@ from module.ingest.download.infrastructure.persistence.repositories.download_tas
 from module.ingest.discovery.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork,
 )
-from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_repository_impl import (
-    KnowledgeSpaceRepositoryImpl,
+from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_data_hub_repository_impl import (
+    KnowledgeSpaceDataHubRepositoryImpl,
 )
 from module.master_data.data_hub_providers.infrastructure.persistence.repositories.data_hub_provider_repository_impl import (
     DataHubProviderRepositoryImpl,
@@ -61,8 +61,8 @@ def create_discover_batch_use_case(
         )
     )
 
-    knowledge_space_repository = (
-        KnowledgeSpaceRepositoryImpl(
+    knowledge_space_data_hub_repository = (
+        KnowledgeSpaceDataHubRepositoryImpl(
             session=session,
         )
     )
@@ -103,7 +103,7 @@ def create_discover_batch_use_case(
                 ingestion_config_repository
             ),
             knowledge_space_data_hub_repository=(
-                knowledge_space_repository
+                knowledge_space_data_hub_repository
             ),
             data_hub_provider_repository=(
                 data_hub_provider_repository
