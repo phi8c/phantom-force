@@ -1,10 +1,10 @@
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from module.ingest.download.domain.contracts.source_asset_query import (
+from module.ingest.download.composition import (
     SourceAssetQuery,
 )
-from module.ingest.extraction.domain.contracts.source_asset_reader import (
+from module.ingest.extraction.composition import (
     SourceAsset,
     SourceAssetReader,
 )

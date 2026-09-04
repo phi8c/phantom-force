@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.embedding.application.use_cases.embed_batch import (
     EmbedBatchUseCase,
 )
@@ -29,7 +27,7 @@ from module.ingest.embedding.infrastructure.engine.embedding_engine_resolver imp
 
 def create_embed_batch_use_case(
     *,
-    session: AsyncSession,
+    session,
     chunk_reader: ChunkReader,
     batch_finalizer: BatchFinalizer,
     max_attempts: int = 3,

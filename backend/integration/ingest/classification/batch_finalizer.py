@@ -3,12 +3,12 @@ from uuid import UUID
 from integration.ingest.batch_finalizer import (
     IngestBatchFinalizer,
 )
-from module.ingest.classification.domain.contracts.batch_finalizer import (
+from module.ingest.classification.composition import (
     BatchFinalizationSignal,
     BatchFinalizer,
 )
 
-from module.ingest.chunking.domain.contracts.chunk_batch_completion_service import (
+from module.ingest.chunking.composition import (
     ChunkBatchCompletionService,
 )
 

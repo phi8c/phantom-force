@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.download.application.use_cases.download_file import (
     DownloadFileUseCase,
 )
@@ -28,7 +26,7 @@ from module.ingest.download.domain.contracts.extraction_task_scheduler import (
 
 def create_download_file_use_case(
     *,
-    session: AsyncSession,
+    session,
     document_source: DocumentSource,
     object_storage: ObjectStorage,
     extraction_task_scheduler: ExtractionTaskScheduler,

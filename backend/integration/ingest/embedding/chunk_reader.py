@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from module.ingest.chunking.domain.contracts.document_chunk_query import (
+from module.ingest.chunking.composition import (
     DocumentChunkQuery,
 )
-from module.ingest.embedding.domain.contracts.chunk_reader import (
+from module.ingest.embedding.composition import (
     ChunkForEmbedding,
     ChunkReader,
 )

@@ -41,20 +41,35 @@ from module.ingest.master.model_set.infrastructure.persistence.repositories.mode
 from module.ingest.download.infrastructure.persistence.repositories.download_task_repository_impl import (
     DownloadTaskRepositoryImpl,
 )
+from module.ingest.download.composition import (
+    DownloadTaskSchedulingService,
+)
 from module.ingest.extraction.infrastructure.persistence.repositories.extraction_task_repository_impl import (
     ExtractionTaskRepositoryImpl,
+)
+from module.ingest.extraction.composition import (
+    ExtractionTaskSchedulingService,
 )
 from module.ingest.chunking.infrastructure.persistence.repositories.chunking_task_repository_impl import (
     ChunkingTaskRepositoryImpl,
 )
+from module.ingest.chunking.composition import (
+    ChunkingTaskSchedulingService,
+)
 from module.ingest.embedding.infrastructure.persistence.repositories.embedding_task_repository_impl import (
     EmbeddingTaskRepositoryImpl,
+)
+from module.ingest.embedding.composition import (
+    EmbeddingTaskSchedulingService,
 )
 from module.ingest.classification.infrastructure.persistence.repositories.classification_task_repository_impl import (
     ClassificationTaskRepositoryImpl,
 )
 from module.ingest.classification.infrastructure.persistence.repositories.chunk_classification_repository_impl import (
     ChunkClassificationRepositoryImpl,
+)
+from module.ingest.classification.composition import (
+    ClassificationTaskSchedulingService,
 )
 from module.ingest.download.infrastructure.persistence.queries.source_asset_query import (
     SourceAssetQuery,
@@ -159,9 +174,13 @@ def download_use_case_scope(
                 object_storage=object_storage,
                 extraction_task_scheduler=(
                     ModuleExtractionTaskScheduler(
-                        task_repository=(
-                            ExtractionTaskRepositoryImpl(
-                                session=session,
+                        scheduling_service=(
+                            ExtractionTaskSchedulingService(
+                                task_repository=(
+                                    ExtractionTaskRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
                             )
                         ),
                         dispatcher=extraction_dispatcher,
@@ -188,9 +207,13 @@ def discovery_use_case_scope(
                 ),
                 download_task_scheduler=(
                     ModuleDownloadTaskScheduler(
-                        task_repository=(
-                            DownloadTaskRepositoryImpl(
-                                session=session,
+                        scheduling_service=(
+                            DownloadTaskSchedulingService(
+                                task_repository=(
+                                    DownloadTaskRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
                             )
                         ),
                         dispatcher=download_dispatcher,
@@ -224,9 +247,13 @@ def extraction_use_case_scope(
                 object_storage=object_storage,
                 chunking_task_scheduler=(
                     ModuleChunkingTaskScheduler(
-                        task_repository=(
-                            ChunkingTaskRepositoryImpl(
-                                session=session,
+                        scheduling_service=(
+                            ChunkingTaskSchedulingService(
+                                task_repository=(
+                                    ChunkingTaskRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
                             )
                         ),
                         dispatcher=chunking_dispatcher,
@@ -261,32 +288,40 @@ def chunking_use_case_scope(
                 ),
                 downstream_task_scheduler=(
                     ModuleDownstreamTaskScheduler(
-                        ingestion_config_repository=(
-                            IngestionConfigRepositoryImpl(
-                                session=session,
-                            )
-                        ),
-                        chunk_query=DocumentChunkQuery(
-                            session=session,
-                        ),
                         batch_completion_service=(
                             ChunkBatchCompletionService(
                                 session=session,
                             )
                         ),
-                        embedding_task_repository=(
-                            EmbeddingTaskRepositoryImpl(
-                                session=session,
+                        embedding_scheduling_service=(
+                            EmbeddingTaskSchedulingService(
+                                task_repository=(
+                                    EmbeddingTaskRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
                             )
                         ),
-                        classification_task_repository=(
-                            ClassificationTaskRepositoryImpl(
-                                session=session,
-                            )
-                        ),
-                        chunk_classification_repository=(
-                            ChunkClassificationRepositoryImpl(
-                                session=session,
+                        classification_scheduling_service=(
+                            ClassificationTaskSchedulingService(
+                                ingestion_config_repository=(
+                                    IngestionConfigRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
+                                task_repository=(
+                                    ClassificationTaskRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
+                                classification_repository=(
+                                    ChunkClassificationRepositoryImpl(
+                                        session=session,
+                                    )
+                                ),
+                                chunk_query=DocumentChunkQuery(
+                                    session=session,
+                                ),
                             )
                         ),
                         embedding_dispatcher=(

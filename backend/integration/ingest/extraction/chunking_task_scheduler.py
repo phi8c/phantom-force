@@ -1,18 +1,10 @@
 from uuid import UUID
 
-from module.ingest.chunking.domain.contracts.chunking_dispatcher import (
+from module.ingest.chunking.composition import (
     ChunkingDispatcher,
+    ChunkingTaskSchedulingService,
 )
-from module.ingest.chunking.domain.contracts.chunking_task_repository import (
-    ChunkingTaskRepository,
-)
-from module.ingest.chunking.domain.entities.chunking_task import (
-    ChunkingTask,
-)
-from module.ingest.chunking.domain.enums.task_status import (
-    TaskStatus,
-)
-from module.ingest.extraction.domain.contracts.chunking_task_scheduler import (
+from module.ingest.extraction.composition import (
     ChunkingTaskScheduler,
 )
 
@@ -23,10 +15,10 @@ class ModuleChunkingTaskScheduler(
 
     def __init__(
         self,
-        task_repository: ChunkingTaskRepository,
+        scheduling_service: ChunkingTaskSchedulingService,
         dispatcher: ChunkingDispatcher,
     ):
-        self._task_repository = task_repository
+        self._scheduling_service = scheduling_service
         self._dispatcher = dispatcher
 
     async def ensure_ready_task(
@@ -37,31 +29,9 @@ class ModuleChunkingTaskScheduler(
         extracted_asset_id: UUID,
     ) -> None:
 
-        existing_task = (
-            await self._task_repository
-            .get_by_job_and_document(
-                ingestion_job_id=ingestion_job_id,
-                document_id=document_id,
-            )
-        )
-
-        if existing_task is not None:
-            return
-
-        await self._task_repository.create(
-            ChunkingTask(
-                id=None,
-                ingestion_job_id=ingestion_job_id,
-                document_id=document_id,
-                status=TaskStatus.READY,
-                attempt_count=0,
-                claimed_by=None,
-                lease_until=None,
-                error=None,
-                created_at=None,
-                updated_at=None,
-                completed_at=None,
-            )
+        await self._scheduling_service.schedule(
+            ingestion_job_id=ingestion_job_id,
+            document_id=document_id,
         )
 
     async def dispatch_job(

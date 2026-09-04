@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
@@ -29,7 +27,7 @@ from module.ingest.classification.infrastructure.engine.legacy_classification_en
 
 def create_classify_batch_use_case(
     *,
-    session: AsyncSession,
+    session,
     chunk_reader: ChunkReader,
     batch_finalizer: BatchFinalizer,
     max_attempts: int = 3,

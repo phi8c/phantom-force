@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from module.ingest.chunking.domain.contracts.downstream_task_scheduler import (
+from module.ingest.chunking.composition import (
     DownstreamSignals,
     DownstreamTaskScheduler,
 )

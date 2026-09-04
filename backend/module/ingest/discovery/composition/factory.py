@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.data_platform.data_hub.composition.provider_resolver import (
     DataHubProviderResolver,
 )
@@ -44,7 +42,7 @@ from module.ingest.discovery.infrastructure.catalog.data_hub_source_catalog impo
 
 def create_discover_batch_use_case(
     *,
-    session: AsyncSession,
+    session,
     data_hub_provider_resolver: DataHubProviderResolver,
     download_task_scheduler: DownloadTaskScheduler,
 ) -> DiscoverBatchUseCase:

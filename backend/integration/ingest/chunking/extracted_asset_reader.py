@@ -1,11 +1,11 @@
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from module.ingest.chunking.domain.contracts.extracted_asset_reader import (
+from module.ingest.chunking.composition import (
     ExtractedAsset,
     ExtractedAssetReader,
 )
-from module.ingest.extraction.domain.contracts.extracted_asset_query import (
+from module.ingest.extraction.composition import (
     ExtractedAssetQuery,
 )
 

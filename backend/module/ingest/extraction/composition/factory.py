@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.extraction.application.use_cases.extract_document import (
     ExtractDocumentUseCase,
 )
@@ -31,7 +29,7 @@ from module.ingest.extraction.infrastructure.persistence.repositories.storage_as
 
 def create_extract_document_use_case(
     *,
-    session: AsyncSession,
+    session,
     source_asset_reader: SourceAssetReader,
     object_storage: ObjectStorage,
     chunking_task_scheduler: ChunkingTaskScheduler,

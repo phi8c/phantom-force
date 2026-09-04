@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from module.ingest.chunking.application.use_cases.chunk_document import (
     ChunkDocumentUseCase,
 )
@@ -28,7 +26,7 @@ from module.ingest.chunking.infrastructure.engine.chunking_engine_resolver impor
 
 def create_chunk_document_use_case(
     *,
-    session: AsyncSession,
+    session,
     extracted_asset_reader: ExtractedAssetReader,
     downstream_task_scheduler: DownstreamTaskScheduler,
     max_attempts: int = 3,

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from module.ingest.extraction.domain.contracts.chunking_task_scheduler import (
+from module.ingest.extraction.composition import (
     ChunkingTaskScheduler,
 )
 

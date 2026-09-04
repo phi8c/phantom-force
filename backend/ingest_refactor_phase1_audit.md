@@ -355,3 +355,23 @@ Residual architecture decision:
   that model because SOURCE and EXTRACTED assets share the same table.
 - To make module boundaries fully strict, choose a single owner for the
   `storage_assets` table/API before moving this last shared persistence concern.
+
+## Strict Boundary Follow-up
+
+After the initial six phases, the boundary was tightened further:
+
+- Each ingest module now exposes public symbols from
+  `module/ingest/<module>/composition/__init__.py`.
+- Integration adapters import ingest module capabilities only through
+  `module.ingest.<module>.composition`.
+- Integration adapters no longer import cross-module `.domain`, `.application`,
+  `.infrastructure`, or `.engine` packages.
+- Creation of `DownloadTask`, `ExtractionTask`, `ChunkingTask`,
+  `EmbeddingTask`, `ClassificationTask`, and default disabled
+  `ChunkClassification` records is owned by module application services.
+- `integration/ingest/chunking/downstream_task_scheduler.py` is now only
+  orchestration: schedule embedding, schedule classification, and mark chunk
+  batch classification completion when classification is skipped.
+- `DocumentChunkQuery`, `SourceAssetQuery`, `ExtractedAssetQuery`, and
+  `ChunkBatchCompletionService` are exposed through composition boundaries.
+- Bootstrap remains responsible for wiring infrastructure implementations.

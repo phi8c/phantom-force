@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from module.ingest.chunking.domain.contracts.chunk_batch_completion_service import (
+from module.ingest.chunking.composition import (
     BatchCompletionResult,
     ChunkBatchCompletionService,
 )
