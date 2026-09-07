@@ -1,0 +1,407 @@
+BEGIN;
+
+-- ============================================================
+-- EXTENSIONS
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+
+-- ============================================================
+-- 1. KNOWLEDGE DOCUMENT TYPES
+-- Registry các loại document:
+-- contract, report, technical_document, procedure, ...
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_document_types (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    code                varchar(150) NOT NULL,
+    name                varchar(255) NULL,
+    description         text NULL,
+
+    -- Prompt/guidance/schema hints dùng khi structure document
+    structuring_guidance jsonb NULL,
+
+    -- Để NULL trước, populate khi cần semantic matching
+    embedding           vector NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_knowledge_document_types_space_code
+        UNIQUE (knowledge_space_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_document_types_space
+    ON public.knowledge_document_types (knowledge_space_id);
+
+
+-- ============================================================
+-- 2. KNOWLEDGE OBJECTS
+--
+-- Object + optional Identifier được lưu chung.
+--
+-- Ví dụ:
+-- object_code     = product
+-- identifier_code = product_a
+--
+-- Hoặc:
+-- object_code     = real_estate_market
+-- identifier_code = NULL
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_objects (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    object_code         varchar(200) NOT NULL,
+    identifier_code     varchar(300) NULL,
+
+    object_name         varchar(255) NULL,
+    identifier_name     varchar(500) NULL,
+
+    description         text NULL,
+
+    -- Ví dụ:
+    -- ["Product A", "Sản phẩm A", "Model A"]
+    aliases             jsonb NULL,
+
+    object_embedding    vector NULL,
+    identifier_embedding vector NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- PostgreSQL UNIQUE thông thường coi NULL != NULL,
+-- nên dùng 2 partial unique index để đảm bảo:
+--
+-- product / product_a chỉ có 1
+-- real_estate_market / NULL cũng chỉ có 1
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_objects_with_identifier
+    ON public.knowledge_objects (
+        knowledge_space_id,
+        object_code,
+        identifier_code
+    )
+    WHERE identifier_code IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_objects_without_identifier
+    ON public.knowledge_objects (
+        knowledge_space_id,
+        object_code
+    )
+    WHERE identifier_code IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_objects_space
+    ON public.knowledge_objects (knowledge_space_id);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_objects_object_code
+    ON public.knowledge_objects (
+        knowledge_space_id,
+        object_code
+    );
+
+
+-- ============================================================
+-- 3. KNOWLEDGE INFORMATION TYPES
+--
+-- Ví dụ:
+-- product_launch
+-- product_characteristics
+-- technical_specification
+-- payment_obligation
+-- market_outlook
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_information_types (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    code                varchar(200) NOT NULL,
+    name                varchar(255) NULL,
+    description         text NULL,
+
+    embedding           vector NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_knowledge_information_types_space_code
+        UNIQUE (knowledge_space_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_types_space
+    ON public.knowledge_information_types (knowledge_space_id);
+
+
+-- ============================================================
+-- 4. KNOWLEDGE INFORMATION FIELDS
+--
+-- Registry tất cả field model từng khám phá.
+--
+-- Ví dụ:
+-- time
+-- location
+-- characteristics
+-- switching_force
+-- voltage
+-- maximum_speed
+-- condition
+-- price
+-- ...
+--
+-- Giá trị KHÔNG nằm ở bảng này.
+-- Giá trị nằm trong knowledge_information.data.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_information_fields (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    code                varchar(200) NOT NULL,
+
+    name                varchar(255) NULL,
+    description         text NULL,
+
+    -- text / number / boolean / date / datetime /
+    -- object / array / measurement / ...
+    data_type           varchar(100) NULL,
+
+    -- Ví dụ:
+    -- voltage
+    -- currency
+    -- distance
+    -- force
+    -- percentage
+    -- duration
+    unit_type           varchar(100) NULL,
+
+    embedding           vector NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_knowledge_information_fields_space_code
+        UNIQUE (knowledge_space_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_fields_space
+    ON public.knowledge_information_fields (knowledge_space_id);
+
+
+-- ============================================================
+-- 5. KNOWLEDGE TOPICS
+--
+-- Ví dụ:
+-- vietnam_real_estate_market
+-- railway_safety
+-- product_strategy
+-- ...
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_topics (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    code                varchar(250) NOT NULL,
+    name                varchar(500) NULL,
+    description         text NULL,
+
+    embedding           vector NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_knowledge_topics_space_code
+        UNIQUE (knowledge_space_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_topics_space
+    ON public.knowledge_topics (knowledge_space_id);
+
+
+-- ============================================================
+-- 6. KNOWLEDGE INFORMATION
+--
+-- Đây là semantic knowledge unit chính.
+--
+-- data:
+-- {
+--   "voltage": {
+--       "value": 160,
+--       "unit": "V"
+--   },
+--   "switching_force": {
+--       "value": 2450,
+--       "unit": "N"
+--   }
+-- }
+--
+-- object_refs:
+-- [
+--   {
+--      "object_id": "...",
+--      "object_code": "turnout_machine",
+--      "identifier_code": "zd6"
+--   }
+-- ]
+--
+-- topic_refs:
+-- [...]
+--
+-- source_refs:
+-- [
+--   {
+--      "document_id": "...",
+--      "chunk_id": "...",
+--      "confidence": 0.97
+--   }
+-- ]
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.knowledge_information (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    knowledge_space_id  uuid NOT NULL
+        REFERENCES public.knowledge_spaces(id)
+        ON DELETE CASCADE,
+
+    information_type_id uuid NULL
+        REFERENCES public.knowledge_information_types(id)
+        ON DELETE SET NULL,
+
+    -- Complete semantic statement.
+    summary             text NOT NULL,
+
+    -- Dynamic fields + values.
+    data                jsonb NULL,
+
+    -- Object + Identifier references.
+    object_refs         jsonb NULL,
+
+    -- Topic references.
+    topic_refs          jsonb NULL,
+
+    -- document/chunk provenance.
+    source_refs         jsonb NULL,
+
+    -- Semantic embedding của toàn Information.
+    embedding           vector NULL,
+
+    confidence          double precision NULL,
+
+    -- Giữ nguyên output model để POC/reprocess/debug.
+    raw_model_output    jsonb NULL,
+
+    metadata            jsonb NULL,
+
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_knowledge_information_confidence
+        CHECK (
+            confidence IS NULL
+            OR (confidence >= 0 AND confidence <= 1)
+        )
+);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_space
+    ON public.knowledge_information (knowledge_space_id);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_type
+    ON public.knowledge_information (
+        knowledge_space_id,
+        information_type_id
+    );
+
+-- JSONB indexes phục vụ POC/query/filter.
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_data_gin
+    ON public.knowledge_information
+    USING gin (data);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_object_refs_gin
+    ON public.knowledge_information
+    USING gin (object_refs);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_topic_refs_gin
+    ON public.knowledge_information
+    USING gin (topic_refs);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_information_source_refs_gin
+    ON public.knowledge_information
+    USING gin (source_refs);
+
+
+COMMIT;
+
+
+
+
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS prompts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    code varchar(200) NOT NULL,
+    name varchar(255),
+    description text,
+
+    system_prompt text NOT NULL,
+
+    configuration jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+    enabled boolean NOT NULL DEFAULT true,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_prompts_code UNIQUE (code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_enabled
+    ON prompts (enabled);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_code
+    ON prompts (code);
+
+COMMIT;
