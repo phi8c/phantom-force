@@ -1,10 +1,7 @@
 from typing import Any
 
-from module.ai.llm.domain.contracts.ai_model_repository import (
-    AIModelRepository,
-)
-from module.ai.llm.domain.contracts.ai_provider_repository import (
-    AIProviderRepository,
+from module.ai.llm.application.services.ai_model_provider import (
+    AIModelProvider,
 )
 from module.ai.llm.domain.contracts.llm_gateway import (
     LLMGateway,
@@ -20,12 +17,10 @@ class AzureOpenAILLMGateway(
 
     def __init__(
         self,
-        provider_repository: AIProviderRepository,
-        model_repository: AIModelRepository,
+        ai_model_provider: AIModelProvider,
         client: Any | None = None,
     ):
-        self._provider_repository = provider_repository
-        self._model_repository = model_repository
+        self._ai_model_provider = ai_model_provider
         self._client = client
 
     async def generate(
@@ -38,26 +33,18 @@ class AzureOpenAILLMGateway(
         config: dict[str, Any] | None = None,
     ) -> LLMResult:
 
-        provider = await (
-            self._provider_repository.get_enabled_by_code(
-                provider_code,
-            )
-        )
-
-        if provider is None:
-            raise ValueError(
-                "AI provider not found or disabled",
-            )
-
-        model = await self._model_repository.get(
+        resolved_model = await self._ai_model_provider.get(
             provider_code=provider_code,
             model_code=model_code,
         )
 
-        if model is None:
+        if resolved_model is None:
             raise ValueError(
-                "AI model not found or disabled",
+                "AI provider/model not found or disabled",
             )
+
+        provider = resolved_model.provider
+        model = resolved_model.model
 
         client = self._get_client(
             base_url=provider.base_url,

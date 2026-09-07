@@ -71,22 +71,10 @@ def create_ai_model_provider(
     session: AsyncSession,
 ) -> AIModelProvider:
 
-    provider_repository = SqlAlchemyAIProviderRepository(
-        session=session,
-    )
-    model_repository = SqlAlchemyAIModelRepository(
-        session=session,
-    )
-
-    application_provider = ApplicationAIModelProvider(
-        resolve_ai_model=ResolveAIModelUseCase(
-            model_repository=model_repository,
-            provider_repository=provider_repository,
-        ),
-    )
-
     return AIModelProvider(
-        provider=application_provider,
+        provider=_create_application_ai_model_provider(
+            session,
+        ),
     )
 
 
@@ -94,16 +82,12 @@ def create_llm_gateway(
     session: AsyncSession,
 ) -> LLMGateway:
 
-    provider_repository = SqlAlchemyAIProviderRepository(
-        session=session,
-    )
-    model_repository = SqlAlchemyAIModelRepository(
-        session=session,
-    )
-
     gateway = AzureOpenAILLMGateway(
-        provider_repository=provider_repository,
-        model_repository=model_repository,
+        ai_model_provider=(
+            _create_application_ai_model_provider(
+                session,
+            )
+        ),
     )
 
     return LLMGateway(
@@ -167,5 +151,24 @@ def create_ai_model_admin_service(
         ),
         delete_model=DeleteAIModelUseCase(
             repository=repository,
+        ),
+    )
+
+
+def _create_application_ai_model_provider(
+    session: AsyncSession,
+) -> ApplicationAIModelProvider:
+
+    provider_repository = SqlAlchemyAIProviderRepository(
+        session=session,
+    )
+    model_repository = SqlAlchemyAIModelRepository(
+        session=session,
+    )
+
+    return ApplicationAIModelProvider(
+        resolve_ai_model=ResolveAIModelUseCase(
+            model_repository=model_repository,
+            provider_repository=provider_repository,
         ),
     )
