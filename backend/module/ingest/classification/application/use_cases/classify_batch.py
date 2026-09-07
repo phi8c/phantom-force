@@ -1,8 +1,13 @@
 import logging
 from datetime import datetime
 from datetime import timezone
+from typing import Any
 from uuid import UUID
 
+from module.ingest.knowledge.composition import (
+    KnowledgeWriteRequest,
+    KnowledgeWriter,
+)
 from module.ingest.classification.domain.contracts.batch_finalizer import (
     BatchFinalizer,
 )
@@ -42,6 +47,7 @@ class ClassifyBatchUseCase:
         classification_engine: ClassificationEngine,
         classification_repository: ChunkClassificationRepository,
         batch_finalizer: BatchFinalizer,
+        knowledge_writer: KnowledgeWriter,
         uow: UnitOfWork,
         max_attempts: int = 3,
     ):
@@ -52,6 +58,7 @@ class ClassifyBatchUseCase:
             classification_repository
         )
         self.batch_finalizer = batch_finalizer
+        self.knowledge_writer = knowledge_writer
         self.uow = uow
         self.max_attempts = max_attempts
 
@@ -123,8 +130,14 @@ class ClassifyBatchUseCase:
                     id=None,
                     chunk_id=result.chunk_id,
                     model_name=result.model_name,
-                    label="llm_response",
-                    confidence=None,
+                    label=self._label_from_raw_response(
+                        result.raw_response,
+                    ),
+                    confidence=(
+                        self._confidence_from_raw_response(
+                            result.raw_response,
+                        )
+                    ),
                     raw_response=result.raw_response,
                     created_at=None,
                 )
@@ -143,6 +156,32 @@ class ClassifyBatchUseCase:
                 "classification persist_done task_id=%s classifications=%s",
                 task_id,
                 len(classifications),
+            )
+
+            logger.info(
+                "classification knowledge_persist_start task_id=%s results=%s",
+                task_id,
+                len(results),
+            )
+            for result in results:
+                if result.raw_response is None:
+                    continue
+
+                await self.knowledge_writer.write(
+                    KnowledgeWriteRequest(
+                        ingestion_job_id=(
+                            task.ingestion_job_id
+                        ),
+                        document_id=task.document_id,
+                        chunk_id=result.chunk_id,
+                        model_name=result.model_name,
+                        raw_response=result.raw_response,
+                    )
+                )
+            logger.info(
+                "classification knowledge_persist_done task_id=%s results=%s",
+                task_id,
+                len(results),
             )
 
             signal = (
@@ -220,6 +259,72 @@ class ClassifyBatchUseCase:
                 )
 
             raise
+
+    @staticmethod
+    def _label_from_raw_response(
+        raw_response: dict[str, Any] | None,
+    ) -> str:
+
+        classification = (
+            ClassifyBatchUseCase
+            ._classification_payload(
+                raw_response,
+            )
+        )
+
+        label = classification.get("label")
+
+        if label is None:
+            raise ValueError(
+                "Classification response missing sensitivity label",
+            )
+
+        return str(label)
+
+    @staticmethod
+    def _confidence_from_raw_response(
+        raw_response: dict[str, Any] | None,
+    ) -> float | None:
+
+        classification = (
+            ClassifyBatchUseCase
+            ._classification_payload(
+                raw_response,
+            )
+        )
+
+        confidence = classification.get("confidence")
+
+        if confidence is None:
+            return None
+
+        value = float(confidence)
+        if value < 0 or value > 1:
+            raise ValueError(
+                "Classification confidence must be between 0 and 1",
+            )
+
+        return value
+
+    @staticmethod
+    def _classification_payload(
+        raw_response: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+
+        if raw_response is None:
+            return {}
+
+        classification = raw_response.get(
+            "classification",
+        )
+
+        if isinstance(
+            classification,
+            dict,
+        ):
+            return classification
+
+        return raw_response
 
     async def _complete_skipped(
         self,

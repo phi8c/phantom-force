@@ -25,6 +25,9 @@ from module.ingest.classification.infrastructure.persistence.sqlalchemy_unit_of_
 from module.ingest.classification.infrastructure.engine.llm_classification_engine import (
     LLMClassificationEngine,
 )
+from module.ingest.knowledge.composition import (
+    create_knowledge_writer,
+)
 from module.prompt.composition import (
     create_prompt_provider,
 )
@@ -59,6 +62,9 @@ def create_classify_batch_use_case(
             )
         ),
         batch_finalizer=batch_finalizer,
+        knowledge_writer=create_knowledge_writer(
+            session,
+        ),
         uow=SQLAlchemyUnitOfWork(
             session=session,
         ),
