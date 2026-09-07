@@ -84,12 +84,6 @@ class LegacyClassificationEngineAdapter(
                 model_name=self._model_name_from_result(
                     result,
                 ),
-                label=self._label_from_result(
-                    result,
-                ),
-                confidence=self._confidence_from_result(
-                    result,
-                ),
                 raw_response=self._raw_response_from_result(
                     result,
                 ),
@@ -115,48 +109,6 @@ class LegacyClassificationEngineAdapter(
             return str(model_name)
 
         return "legacy_classification_engine"
-
-    @staticmethod
-    def _label_from_result(
-        result,
-    ) -> str:
-
-        metadata = dict(
-            result.metadata
-            or {}
-        )
-
-        label = metadata.get(
-            "label",
-        )
-
-        if label:
-            return str(label)
-
-        return (
-            "public"
-            if result.sensitivity <= 1
-            else "sensitive"
-        )
-
-    @staticmethod
-    def _confidence_from_result(
-        result,
-    ) -> float | None:
-
-        metadata = dict(
-            result.metadata
-            or {}
-        )
-
-        confidence = metadata.get(
-            "confidence",
-        )
-
-        if confidence is None:
-            return None
-
-        return float(confidence)
 
     @staticmethod
     def _raw_response_from_result(

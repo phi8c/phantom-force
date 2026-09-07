@@ -123,8 +123,8 @@ class ClassifyBatchUseCase:
                     id=None,
                     chunk_id=result.chunk_id,
                     model_name=result.model_name,
-                    label=result.label,
-                    confidence=result.confidence,
+                    label="llm_response",
+                    confidence=None,
                     raw_response=result.raw_response,
                     created_at=None,
                 )

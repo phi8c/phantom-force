@@ -13,8 +13,6 @@ from module.ingest.classification.domain.contracts.chunk_reader import (
 class ClassificationResult:
     chunk_id: UUID
     model_name: str
-    label: str
-    confidence: float | None
     raw_response: dict[str, Any] | None
 
 

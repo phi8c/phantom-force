@@ -1,6 +1,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from module.ai.llm.composition import (
+    create_llm_gateway,
+)
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
@@ -19,9 +22,11 @@ from module.ingest.classification.infrastructure.persistence.repositories.classi
 from module.ingest.classification.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork,
 )
-
-from module.ingest.classification.infrastructure.engine.legacy_classification_engine import (
-    LegacyClassificationEngineAdapter,
+from module.ingest.classification.infrastructure.engine.llm_classification_engine import (
+    LLMClassificationEngine,
+)
+from module.prompt.composition import (
+    create_prompt_provider,
 )
 
 
@@ -39,7 +44,14 @@ def create_classify_batch_use_case(
         ),
         chunk_reader=chunk_reader,
         classification_engine=(
-            LegacyClassificationEngineAdapter()
+            LLMClassificationEngine(
+                prompt_provider=create_prompt_provider(
+                    session,
+                ),
+                llm_gateway=create_llm_gateway(
+                    session,
+                ),
+            )
         ),
         classification_repository=(
             ChunkClassificationRepositoryImpl(
