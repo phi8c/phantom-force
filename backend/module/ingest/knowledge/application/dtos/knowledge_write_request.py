@@ -5,7 +5,7 @@ from uuid import UUID
 
 @dataclass(frozen=True)
 class KnowledgeWriteRequest:
-    ingestion_job_id: UUID
+    knowledge_space_id: UUID
     document_id: UUID
     chunk_id: UUID
     model_name: str

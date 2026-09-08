@@ -4,6 +4,9 @@ from datetime import timezone
 from typing import Any
 from uuid import UUID
 
+from module.ingest.config.composition import (
+    IngestionConfigService,
+)
 from module.ingest.knowledge.composition import (
     KnowledgeWriteRequest,
     KnowledgeWriter,
@@ -48,6 +51,7 @@ class ClassifyBatchUseCase:
         classification_repository: ChunkClassificationRepository,
         batch_finalizer: BatchFinalizer,
         knowledge_writer: KnowledgeWriter,
+        ingestion_config_service: IngestionConfigService,
         uow: UnitOfWork,
         max_attempts: int = 3,
     ):
@@ -59,6 +63,9 @@ class ClassifyBatchUseCase:
         )
         self.batch_finalizer = batch_finalizer
         self.knowledge_writer = knowledge_writer
+        self.ingestion_config_service = (
+            ingestion_config_service
+        )
         self.uow = uow
         self.max_attempts = max_attempts
 
@@ -125,24 +132,28 @@ class ClassifyBatchUseCase:
                 len(results),
             )
 
-            classifications = [
-                ChunkClassification(
-                    id=None,
+            classifications = []
+            for result in results:
+                self._validate_response_contract(
+                    result.raw_response,
+                    task_id=task.id,
                     chunk_id=result.chunk_id,
-                    model_name=result.model_name,
-                    label=self._label_from_raw_response(
-                        result.raw_response,
-                    ),
-                    confidence=(
-                        self._confidence_from_raw_response(
-                            result.raw_response,
-                        )
-                    ),
-                    raw_response=result.raw_response,
-                    created_at=None,
                 )
-                for result in results
-            ]
+                classifications.append(
+                    ChunkClassification(
+                        id=None,
+                        chunk_id=result.chunk_id,
+                        model_name=result.model_name,
+                        label=self._sensitivity_level_from_raw_response(
+                            result.raw_response,
+                            task_id=task.id,
+                            chunk_id=result.chunk_id,
+                        ),
+                        confidence=None,
+                        raw_response=result.raw_response,
+                        created_at=None,
+                    )
+                )
 
             logger.info(
                 "classification persist_start task_id=%s classifications=%s",
@@ -163,21 +174,43 @@ class ClassifyBatchUseCase:
                 task_id,
                 len(results),
             )
+            ingestion_job = await (
+                self.ingestion_config_service.get_job(
+                    task.ingestion_job_id,
+                )
+            )
+
+            if ingestion_job is None:
+                raise ValueError(
+                    "Ingestion job not found",
+                )
+
             for result in results:
                 if result.raw_response is None:
                     continue
 
-                await self.knowledge_writer.write(
-                    KnowledgeWriteRequest(
-                        ingestion_job_id=(
-                            task.ingestion_job_id
-                        ),
-                        document_id=task.document_id,
-                        chunk_id=result.chunk_id,
-                        model_name=result.model_name,
-                        raw_response=result.raw_response,
+                try:
+                    await self.knowledge_writer.write(
+                        KnowledgeWriteRequest(
+                            knowledge_space_id=(
+                                ingestion_job
+                                .knowledge_space_id
+                            ),
+                            document_id=task.document_id,
+                            chunk_id=result.chunk_id,
+                            model_name=result.model_name,
+                            raw_response=result.raw_response,
+                        )
                     )
-                )
+                except Exception as exc:
+                    logger.error(
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s error=%s",
+                        task.id,
+                        result.chunk_id,
+                        result.raw_response,
+                        exc,
+                    )
+                    raise
             logger.info(
                 "classification knowledge_persist_done task_id=%s results=%s",
                 task_id,
@@ -261,70 +294,256 @@ class ClassifyBatchUseCase:
             raise
 
     @staticmethod
-    def _label_from_raw_response(
+    def _sensitivity_level_from_raw_response(
         raw_response: dict[str, Any] | None,
+        *,
+        task_id: UUID | None = None,
+        chunk_id: UUID | None = None,
     ) -> str:
 
-        classification = (
-            ClassifyBatchUseCase
-            ._classification_payload(
-                raw_response,
-            )
+        sensitivity = ClassifyBatchUseCase._sensitivity(
+            raw_response,
+            task_id=task_id,
+            chunk_id=chunk_id,
         )
 
-        label = classification.get("label")
+        level = sensitivity["level"]
 
-        if label is None:
+        return str(level)
+
+    @staticmethod
+    def _validate_response_contract(
+        raw_response: dict[str, Any] | None,
+        *,
+        task_id: UUID | None = None,
+        chunk_id: UUID | None = None,
+    ) -> None:
+
+        ClassifyBatchUseCase._sensitivity(
+            raw_response,
+            task_id=task_id,
+            chunk_id=chunk_id,
+        )
+
+        if raw_response is None:
+            return
+
+        required_types = {
+            "document_type": dict,
+            "objects": list,
+            "information_types": list,
+            "information_fields": list,
+            "topics": list,
+            "information": list,
+        }
+
+        for key, expected_type in required_types.items():
+            if key not in raw_response:
+                logger.error(
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                    task_id,
+                    chunk_id,
+                    raw_response,
+                    "field_missing",
+                    key,
+                )
+                raise ValueError(
+                    f"Classification response missing {key}",
+                )
+            if not isinstance(
+                raw_response[key],
+                expected_type,
+            ):
+                logger.error(
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s expected_type=%s actual_type=%s",
+                    task_id,
+                    chunk_id,
+                    raw_response,
+                    "invalid_field_type",
+                    key,
+                    expected_type.__name__,
+                    type(raw_response[key]).__name__,
+                )
+                raise ValueError(
+                    "Classification response field "
+                    f"{key} must be {expected_type.__name__}",
+                )
+
+        for key in (
+            "objects",
+            "information_types",
+            "information_fields",
+            "topics",
+            "information",
+        ):
+            for item in raw_response[key]:
+                if not isinstance(item, dict):
+                    logger.error(
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                        task_id,
+                        chunk_id,
+                        raw_response,
+                        "array_item_not_object",
+                        key,
+                    )
+                    raise ValueError(
+                        "Classification response "
+                        f"{key} items must be objects",
+                    )
+
+        for item in raw_response["information"]:
+            information_type = item.get("information_type")
+            if (
+                information_type is not None
+                and not isinstance(information_type, str)
+            ):
+                logger.error(
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                    task_id,
+                    chunk_id,
+                    raw_response,
+                    "invalid_field_type",
+                    "information.information_type",
+                )
+                raise ValueError(
+                    "Classification response "
+                    "information.information_type must be string",
+                )
+
+            for ref_field in (
+                "object_refs",
+                "topic_refs",
+            ):
+                refs = item.get(ref_field)
+                if refs is None:
+                    continue
+                if not isinstance(refs, list):
+                    logger.error(
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                        task_id,
+                        chunk_id,
+                        raw_response,
+                        "invalid_field_type",
+                        f"information.{ref_field}",
+                    )
+                    raise ValueError(
+                        "Classification response "
+                        f"information.{ref_field} must be a list",
+                    )
+                for ref in refs:
+                    if not isinstance(ref, str):
+                        logger.error(
+                            "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                            task_id,
+                            chunk_id,
+                            raw_response,
+                            "array_item_not_string",
+                            f"information.{ref_field}",
+                        )
+                        raise ValueError(
+                            "Classification response "
+                            f"information.{ref_field} items must be strings",
+                        )
+
+    @staticmethod
+    def _sensitivity(
+        raw_response: dict[str, Any] | None,
+        *,
+        task_id: UUID | None = None,
+        chunk_id: UUID | None = None,
+    ) -> dict[str, Any]:
+
+        if raw_response is None:
+            logger.error(
+                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "raw_response_missing",
+            )
             raise ValueError(
                 "Classification response missing sensitivity label",
             )
 
-        return str(label)
-
-    @staticmethod
-    def _confidence_from_raw_response(
-        raw_response: dict[str, Any] | None,
-    ) -> float | None:
-
-        classification = (
-            ClassifyBatchUseCase
-            ._classification_payload(
+        if "sensitivity" not in raw_response:
+            logger.error(
+                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                task_id,
+                chunk_id,
                 raw_response,
+                "field_missing",
             )
-        )
-
-        confidence = classification.get("confidence")
-
-        if confidence is None:
-            return None
-
-        value = float(confidence)
-        if value < 0 or value > 1:
             raise ValueError(
-                "Classification confidence must be between 0 and 1",
+                "Classification response missing sensitivity label",
             )
 
-        return value
+        sensitivity = raw_response["sensitivity"]
+        if not isinstance(sensitivity, dict):
+            logger.error(
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "sensitivity_not_object",
+            )
+            raise ValueError(
+                "Classification response sensitivity must be an object",
+            )
 
-    @staticmethod
-    def _classification_payload(
-        raw_response: dict[str, Any] | None,
-    ) -> dict[str, Any]:
+        if "level" not in sensitivity:
+            logger.error(
+                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "level_missing",
+            )
+            raise ValueError(
+                "Classification response missing sensitivity label",
+            )
 
-        if raw_response is None:
-            return {}
+        level = sensitivity["level"]
+        if isinstance(level, bool) or not isinstance(level, int):
+            logger.error(
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s level=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "level_not_integer",
+                level,
+            )
+            raise ValueError(
+                "Classification sensitivity level must be an integer",
+            )
 
-        classification = raw_response.get(
-            "classification",
-        )
+        if level < 1:
+            logger.error(
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s level=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "level_out_of_range",
+                level,
+            )
+            raise ValueError(
+                "Classification sensitivity level must be at least 1",
+            )
 
-        if isinstance(
-            classification,
-            dict,
-        ):
-            return classification
+        description = sensitivity.get("description")
+        if not isinstance(description, str):
+            logger.error(
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s description=%s",
+                task_id,
+                chunk_id,
+                raw_response,
+                "description_not_string",
+                description,
+            )
+            raise ValueError(
+                "Classification sensitivity description must be a string",
+            )
 
-        return raw_response
+        return sensitivity
 
     async def _complete_skipped(
         self,

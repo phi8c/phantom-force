@@ -4,6 +4,9 @@ from contextlib import asynccontextmanager
 from module.ai.llm.composition import (
     create_llm_gateway,
 )
+from module.ingest.config.composition import (
+    create_ingestion_config_service,
+)
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
@@ -64,6 +67,11 @@ def create_classify_batch_use_case(
         batch_finalizer=batch_finalizer,
         knowledge_writer=create_knowledge_writer(
             session,
+        ),
+        ingestion_config_service=(
+            create_ingestion_config_service(
+                session,
+            )
         ),
         uow=SQLAlchemyUnitOfWork(
             session=session,

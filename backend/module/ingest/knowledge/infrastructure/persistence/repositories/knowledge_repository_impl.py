@@ -6,9 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from module.ingest.config.infrastructure.persistence.models.ingestion_job_model import (
-    IngestionJobModel,
-)
 from module.ingest.knowledge.domain.contracts.knowledge_repository import (
     KnowledgeRepository,
 )
@@ -40,21 +37,6 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         session: AsyncSession,
     ):
         self.session = session
-
-    async def get_knowledge_space_id_by_job_id(
-        self,
-        ingestion_job_id: UUID,
-    ) -> UUID | None:
-
-        result = await self.session.execute(
-            select(
-                IngestionJobModel.knowledge_space_id,
-            ).where(
-                IngestionJobModel.id == ingestion_job_id,
-            )
-        )
-
-        return result.scalar_one_or_none()
 
     async def upsert_document_type(
         self,
@@ -253,24 +235,57 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             model,
         )
 
-    async def add_information(
+    async def upsert_information(
         self,
         entity: KnowledgeInformation,
+        source_identity: dict[str, Any],
     ) -> KnowledgeInformation:
 
-        model = KnowledgeInformationModel(
-            knowledge_space_id=entity.knowledge_space_id,
-            information_type_id=entity.information_type_id,
-            summary=entity.summary,
-            data=entity.data,
-            object_refs=entity.object_refs,
-            topic_refs=entity.topic_refs,
-            source_refs=entity.source_refs,
-            confidence=entity.confidence,
-            raw_model_output=entity.raw_model_output,
-            metadata_payload=entity.metadata,
+        result = await self.session.execute(
+            select(
+                KnowledgeInformationModel,
+            ).where(
+                KnowledgeInformationModel.knowledge_space_id
+                == entity.knowledge_space_id,
+                KnowledgeInformationModel.source_refs.contains(
+                    [
+                        source_identity,
+                    ],
+                ),
+            )
         )
-        self.session.add(model)
+
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            model = KnowledgeInformationModel(
+                knowledge_space_id=entity.knowledge_space_id,
+                information_type_id=entity.information_type_id,
+                summary=entity.summary,
+                data=entity.data,
+                object_refs=entity.object_refs,
+                topic_refs=entity.topic_refs,
+                source_refs=entity.source_refs,
+                confidence=entity.confidence,
+                raw_model_output=entity.raw_model_output,
+                metadata_payload=entity.metadata,
+            )
+            self.session.add(model)
+        else:
+            self._merge_non_null(
+                model,
+                {
+                    "information_type_id": entity.information_type_id,
+                    "summary": entity.summary,
+                    "data": entity.data,
+                    "object_refs": entity.object_refs,
+                    "topic_refs": entity.topic_refs,
+                    "source_refs": entity.source_refs,
+                    "confidence": entity.confidence,
+                    "raw_model_output": entity.raw_model_output,
+                    "metadata_payload": entity.metadata,
+                },
+            )
 
         await self._flush_refresh(model)
 

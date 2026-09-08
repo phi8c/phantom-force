@@ -1,4 +1,5 @@
 from uuid import uuid4
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +23,18 @@ from module.ingest.knowledge.application.services.knowledge_writer import (
 )
 
 
+def test_knowledge_does_not_import_config_infrastructure():
+    root = Path(__file__).parents[1]
+    content = "\n".join(
+        path.read_text()
+        for path in root.rglob("*.py")
+        if "test" not in path.parts
+    )
+
+    assert "module.ingest.config.infrastructure" not in content
+    assert "IngestionJobModel" not in content
+
+
 @pytest.mark.asyncio
 async def test_registry_insert():
     repo = FakeKnowledgeRepository()
@@ -40,7 +53,7 @@ async def test_registry_update():
 
     await writer.write(request(raw_response=sample_response()))
     updated = sample_response()
-    updated["structured_knowledge"]["information_types"][0]["description"] = "Updated"
+    updated["information_types"][0]["description"] = "Updated"
     await writer.write(request(raw_response=updated))
 
     entity = repo.information_types[("space", "technical_specification")]
@@ -54,7 +67,7 @@ async def test_registry_update_does_not_overwrite_with_null():
 
     await writer.write(request(raw_response=sample_response()))
     updated = sample_response()
-    updated["structured_knowledge"]["information_types"][0]["description"] = None
+    updated["information_types"][0]["description"] = None
     await writer.write(request(raw_response=updated))
 
     entity = repo.information_types[("space", "technical_specification")]
@@ -75,7 +88,7 @@ async def test_object_with_identifier():
 async def test_object_without_identifier():
     repo = FakeKnowledgeRepository()
     raw = sample_response()
-    raw["structured_knowledge"]["objects"].append(
+    raw["objects"].append(
         {
             "object_code": "market",
             "identifier_code": None,
@@ -133,9 +146,101 @@ async def test_provenance_source_refs():
         {
             "document_id": str(write_request.document_id),
             "chunk_id": str(write_request.chunk_id),
+            "model_name": write_request.model_name,
+            "ordinal": 0,
             "confidence": 0.9,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_retry_same_chunk_output_does_not_duplicate_information():
+    repo = FakeKnowledgeRepository()
+    write_request = request(raw_response=sample_response())
+    writer = KnowledgeWriter(repo)
+
+    await writer.write(write_request)
+    await writer.write(write_request)
+
+    assert len(repo.information) == 1
+
+
+@pytest.mark.asyncio
+async def test_same_chunk_multiple_information_items_are_preserved():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw["information"].append(
+        {
+            "information_type": "technical_specification",
+            "summary": "Product A switching force is 2450 N.",
+            "data": {
+                "switching_force": {
+                    "value": 2450,
+                    "unit": "N",
+                }
+            },
+            "object_refs": ["product_a"],
+            "topic_refs": ["railway_safety"],
+            "confidence": 0.8,
+        }
+    )
+
+    await KnowledgeWriter(repo).write(
+        request(raw_response=raw),
+    )
+
+    assert len(repo.information) == 2
+
+
+@pytest.mark.asyncio
+async def test_malformed_response_contract_fails_clearly():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+
+    with pytest.raises(
+        ValueError,
+        match="Knowledge response missing document_type",
+    ):
+        await KnowledgeWriter(repo).write(
+            request(raw_response=raw),
+        )
+
+
+@pytest.mark.asyncio
+async def test_classification_passes_knowledge_space_id_to_write_request():
+    task = ClassificationTask(
+        id=uuid4(),
+        ingestion_job_id=uuid4(),
+        batch_id=uuid4(),
+        document_id=uuid4(),
+        status=TaskStatus.PROCESSING,
+        attempt_count=1,
+        claimed_by=None,
+        lease_until=None,
+        error=None,
+        created_at=None,
+        updated_at=None,
+        completed_at=None,
+    )
+    writer = RecordingKnowledgeWriter()
+    classification_repository = FakeClassificationRepository()
+    use_case = ClassifyBatchUseCase(
+        task_repository=FakeTaskRepository(task),
+        chunk_reader=FakeChunkReader(),
+        classification_engine=FakeClassificationEngine(),
+        classification_repository=classification_repository,
+        batch_finalizer=SuccessfulBatchFinalizer(),
+        knowledge_writer=writer,
+        ingestion_config_service=FakeIngestionConfigService(),
+        uow=FakeUow(),
+    )
+
+    await use_case.execute(task.id)
+
+    assert writer.requests[0].knowledge_space_id == "space"
+    assert classification_repository.classifications[0].label == "2"
+    assert classification_repository.classifications[0].confidence is None
 
 
 @pytest.mark.asyncio
@@ -162,6 +267,7 @@ async def test_transaction_rollback_when_knowledge_persistence_fails():
         classification_repository=FakeClassificationRepository(),
         batch_finalizer=FakeBatchFinalizer(),
         knowledge_writer=FailingKnowledgeWriter(),
+        ingestion_config_service=FakeIngestionConfigService(),
         uow=uow,
     )
 
@@ -173,7 +279,7 @@ async def test_transaction_rollback_when_knowledge_persistence_fails():
 
 def request(raw_response):
     return KnowledgeWriteRequest(
-        ingestion_job_id=uuid4(),
+        knowledge_space_id="space",
         document_id=uuid4(),
         chunk_id=uuid4(),
         model_name="gpt-test",
@@ -183,70 +289,57 @@ def request(raw_response):
 
 def sample_response():
     return {
-        "classification": {
-            "label": "internal",
-            "confidence": 0.9,
+        "sensitivity": {
+            "level": 2,
+            "description": "Internal technical information.",
         },
-        "structured_knowledge": {
-            "document_types": [
-                {
-                    "code": "technical_document",
-                    "name": "Technical document",
-                }
-            ],
-            "information_types": [
-                {
-                    "code": "technical_specification",
-                    "name": "Technical specification",
-                    "description": "Initial",
-                }
-            ],
-            "information_fields": [
-                {
-                    "code": "voltage",
-                    "data_type": "measurement",
-                    "unit_type": "voltage",
-                }
-            ],
-            "objects": [
-                {
-                    "object_code": "product",
-                    "identifier_code": "product_a",
-                    "object_name": "Product",
-                    "identifier_name": "Product A",
-                }
-            ],
-            "topics": [
-                {
-                    "code": "railway_safety",
-                    "name": "Railway safety",
-                }
-            ],
-            "information": [
-                {
-                    "information_type_code": "technical_specification",
-                    "summary": "Product A voltage is 160 V.",
-                    "data": {
-                        "voltage": {
-                            "value": 160,
-                            "unit": "V",
-                        }
-                    },
-                    "object_refs": [
-                        {
-                            "object_code": "product",
-                            "identifier_code": "product_a",
-                        }
-                    ],
-                    "topic_refs": [
-                        {
-                            "code": "railway_safety",
-                        }
-                    ],
-                    "confidence": 0.9,
-                }
-            ],
+        "document_type": {
+            "code": "technical_document",
+            "name": "Technical document",
         },
+        "information_types": [
+            {
+                "code": "technical_specification",
+                "name": "Technical specification",
+                "description": "Initial",
+            }
+        ],
+        "information_fields": [
+            {
+                "code": "voltage",
+                "data_type": "measurement",
+                "unit_type": "voltage",
+            }
+        ],
+        "objects": [
+            {
+                "object_code": "product",
+                "identifier_code": "product_a",
+                "object_name": "Product",
+                "identifier_name": "Product A",
+            }
+        ],
+        "topics": [
+            {
+                "code": "railway_safety",
+                "name": "Railway safety",
+            }
+        ],
+        "information": [
+            {
+                "information_type": "technical_specification",
+                "summary": "Product A voltage is 160 V.",
+                "data": {
+                    "voltage": {
+                        "value": 160,
+                        "unit": "V",
+                    }
+                },
+                "object_refs": ["product_a"],
+                "topic_refs": ["railway_safety"],
+                "confidence": 0.9,
+            }
+        ],
     }
 
 
@@ -258,9 +351,6 @@ class FakeKnowledgeRepository:
         self.objects = {}
         self.topics = {}
         self.information = []
-
-    async def get_knowledge_space_id_by_job_id(self, ingestion_job_id):
-        return "space"
 
     async def upsert_document_type(self, entity):
         return self._upsert(self.document_types, ("space", entity.code), entity)
@@ -278,7 +368,19 @@ class FakeKnowledgeRepository:
     async def upsert_topic(self, entity):
         return self._upsert(self.topics, ("space", entity.code), entity)
 
-    async def add_information(self, entity):
+    async def upsert_information(self, entity, source_identity):
+        for existing in self.information:
+            if source_identity.items() <= existing.source_refs[0].items():
+                existing.information_type_id = entity.information_type_id
+                existing.summary = entity.summary
+                existing.data = entity.data
+                existing.object_refs = entity.object_refs
+                existing.topic_refs = entity.topic_refs
+                existing.source_refs = entity.source_refs
+                existing.confidence = entity.confidence
+                existing.raw_model_output = entity.raw_model_output
+                existing.metadata = entity.metadata
+                return existing
         entity.id = uuid4()
         self.information.append(entity)
         return entity
@@ -319,18 +421,18 @@ class FakeClassificationEngine:
             ClassificationResult(
                 chunk_id=uuid4(),
                 model_name="model",
-                raw_response={
-                    "classification": {
-                        "label": "internal",
-                    }
-                },
+                raw_response=sample_response(),
             )
         ]
 
 
 class FakeClassificationRepository:
+    def __init__(self):
+        self.classifications = []
+
     async def upsert_many(self, classifications):
-        return list(classifications)
+        self.classifications = list(classifications)
+        return self.classifications
 
 
 class FakeBatchFinalizer:
@@ -338,9 +440,38 @@ class FakeBatchFinalizer:
         raise AssertionError("finalizer should not run")
 
 
+class SuccessfulBatchFinalizer:
+    async def complete_classification(self, ingestion_job_id, batch_id):
+        return SuccessfulBatchSignal()
+
+    async def dispatch_index(self, ingestion_job_id):
+        pass
+
+
+class SuccessfulBatchSignal:
+    dispatch_index = False
+
+
+class RecordingKnowledgeWriter:
+    def __init__(self):
+        self.requests = []
+
+    async def write(self, request):
+        self.requests.append(request)
+
+
 class FailingKnowledgeWriter:
     async def write(self, request):
         raise RuntimeError("knowledge failed")
+
+
+class FakeIngestionConfigService:
+    async def get_job(self, job_id):
+        return FakeIngestionJob()
+
+
+class FakeIngestionJob:
+    knowledge_space_id = "space"
 
 
 class FakeUow:

@@ -1,7 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
 from typing import Any
-from uuid import UUID
 
 from module.ingest.knowledge.domain.entities import (
     KnowledgeDocumentType,
@@ -14,13 +13,6 @@ from module.ingest.knowledge.domain.entities import (
 
 
 class KnowledgeRepository(ABC):
-
-    @abstractmethod
-    async def get_knowledge_space_id_by_job_id(
-        self,
-        ingestion_job_id: UUID,
-    ) -> UUID | None:
-        pass
 
     @abstractmethod
     async def upsert_document_type(
@@ -58,8 +50,9 @@ class KnowledgeRepository(ABC):
         pass
 
     @abstractmethod
-    async def add_information(
+    async def upsert_information(
         self,
         entity: KnowledgeInformation,
+        source_identity: dict[str, Any],
     ) -> KnowledgeInformation:
         pass
