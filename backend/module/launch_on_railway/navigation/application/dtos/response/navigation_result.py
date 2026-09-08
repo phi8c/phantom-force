@@ -13,4 +13,4 @@ class NavigationItem:
 
 @dataclass(frozen=True)
 class NavigationResult:
-    items: list[NavigationItem]
+    items: list[NavigationItem] = field(default_factory=list)
