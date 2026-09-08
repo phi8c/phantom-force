@@ -1,0 +1,18 @@
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class ChatResponse:
+    answer: str
+
+    intent: str | None = None
+
+    seeds: list[dict[str, Any]] = field(
+        default_factory=list,
+    )
+
+    information: list[dict[str, Any]] = field(
+        default_factory=list,
+    )
