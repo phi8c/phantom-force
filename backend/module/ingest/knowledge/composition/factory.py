@@ -1,5 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from module.ingest.knowledge.application.services.knowledge_reader import (
+    KnowledgeReader,
+)
 from module.ingest.knowledge.application.services.knowledge_writer import (
     KnowledgeWriter,
 )
@@ -13,6 +16,17 @@ def create_knowledge_writer(
 ) -> KnowledgeWriter:
 
     return KnowledgeWriter(
+        repository=KnowledgeRepositoryImpl(
+            session=session,
+        ),
+    )
+
+
+def create_knowledge_reader(
+    session: AsyncSession,
+) -> KnowledgeReader:
+
+    return KnowledgeReader(
         repository=KnowledgeRepositoryImpl(
             session=session,
         ),

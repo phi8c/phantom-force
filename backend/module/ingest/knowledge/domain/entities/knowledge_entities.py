@@ -85,3 +85,15 @@ class KnowledgeInformation:
     metadata: dict[str, Any] | None
     created_at: datetime | None
     updated_at: datetime | None
+
+
+@dataclass
+class KnowledgeInformationSearchRecord:
+    information_id: UUID
+    information_type_code: str | None
+    summary: str
+    data: dict[str, Any] | None
+    object_refs: list[dict[str, Any]] | None
+    topic_refs: list[dict[str, Any]] | None
+    source_refs: list[dict[str, Any]] | None
+    confidence: float | None

@@ -3,6 +3,7 @@ from datetime import timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeDocumentType,
     KnowledgeInformation,
     KnowledgeInformationField,
+    KnowledgeInformationSearchRecord,
     KnowledgeInformationType,
     KnowledgeObject,
     KnowledgeTopic,
@@ -292,6 +294,106 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         return KnowledgeMapper.information_to_entity(
             model,
         )
+
+    async def search_information(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        object_code: str,
+        identifier_code: str | None,
+        information_type_code: str | None,
+        topic_codes: list[str],
+    ) -> list[KnowledgeInformationSearchRecord]:
+
+        object_statement = select(KnowledgeObjectModel).where(
+            KnowledgeObjectModel.knowledge_space_id
+            == knowledge_space_id,
+            KnowledgeObjectModel.object_code == object_code,
+        )
+        if identifier_code is None:
+            object_statement = object_statement.where(
+                KnowledgeObjectModel.identifier_code.is_(None),
+            )
+        else:
+            object_statement = object_statement.where(
+                KnowledgeObjectModel.identifier_code
+                == identifier_code,
+            )
+
+        object_result = await self.session.execute(
+            object_statement,
+        )
+        object_model = object_result.scalar_one_or_none()
+        if object_model is None:
+            return []
+
+        statement = (
+            select(
+                KnowledgeInformationModel,
+                KnowledgeInformationTypeModel.code,
+            )
+            .outerjoin(
+                KnowledgeInformationTypeModel,
+                KnowledgeInformationTypeModel.id
+                == KnowledgeInformationModel.information_type_id,
+            )
+            .where(
+                KnowledgeInformationModel.knowledge_space_id
+                == knowledge_space_id,
+                KnowledgeInformationModel.object_refs.contains(
+                    [
+                        {
+                            "object_id": str(object_model.id),
+                            "object_code": object_model.object_code,
+                            "identifier_code": (
+                                object_model.identifier_code
+                            ),
+                        },
+                    ],
+                ),
+            )
+        )
+
+        if information_type_code is not None:
+            statement = statement.where(
+                KnowledgeInformationTypeModel.knowledge_space_id
+                == knowledge_space_id,
+                KnowledgeInformationTypeModel.code
+                == information_type_code,
+            )
+
+        topic_filters = [
+            KnowledgeInformationModel.topic_refs.contains(
+                [
+                    {
+                        "code": topic_code,
+                    },
+                ],
+            )
+            for topic_code in topic_codes
+        ]
+        if topic_filters:
+            statement = statement.where(
+                or_(*topic_filters),
+            )
+
+        result = await self.session.execute(
+            statement,
+        )
+
+        return [
+            KnowledgeInformationSearchRecord(
+                information_id=model.id,
+                information_type_code=information_type_code,
+                summary=model.summary,
+                data=model.data,
+                object_refs=model.object_refs,
+                topic_refs=model.topic_refs,
+                source_refs=model.source_refs,
+                confidence=model.confidence,
+            )
+            for model, information_type_code in result.all()
+        ]
 
     async def _get_by_space_code(
         self,
