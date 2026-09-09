@@ -16,9 +16,13 @@ from module.ingest.embedding.domain.contracts.embedding_dispatcher import (
 from module.ingest.embedding.domain.contracts.embedding_task_repository import (
     EmbeddingTaskRepository,
 )
+from module.ingest.embedding.domain.contracts.text_embedding_provider import (
+    TextEmbeddingProvider,
+)
 from module.ingest.embedding.composition.factory import (
     create_embed_batch_use_case,
     create_embed_batch_use_case_scope,
+    create_text_embedding_provider,
 )
 
 
@@ -31,6 +35,8 @@ __all__ = [
     "EmbeddingTaskRepository",
     "EmbeddingTaskSchedulingResult",
     "EmbeddingTaskSchedulingService",
+    "TextEmbeddingProvider",
     "create_embed_batch_use_case",
     "create_embed_batch_use_case_scope",
+    "create_text_embedding_provider",
 ]

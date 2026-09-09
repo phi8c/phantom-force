@@ -28,6 +28,13 @@ from module.ingest.knowledge.application.dtos import (
 from module.ingest.knowledge.application.services.knowledge_writer import (
     KnowledgeWriter,
 )
+from module.ingest.knowledge.application.services.knowledge_embedding_service import (
+    KnowledgeEmbeddingService,
+)
+from module.ingest.knowledge.domain.entities import (
+    KnowledgeRegistryEmbeddingKind,
+    KnowledgeRegistryEmbeddingTarget,
+)
 
 
 def test_knowledge_does_not_import_config_infrastructure():
@@ -428,6 +435,79 @@ async def test_two_chunks_keep_different_objects_but_same_document_topic():
     )
 
 
+@pytest.mark.asyncio
+async def test_registry_embeddings_are_batched_and_deduplicated():
+    repo = FakeKnowledgeRepository()
+    embedder = FakeTextEmbeddingProvider()
+    writer = KnowledgeWriter(
+        repo,
+        KnowledgeEmbeddingService(
+            repository=repo,
+            embedder_factory=lambda knowledge_space_id: (
+                fake_embedder(embedder)
+            ),
+        ),
+    )
+
+    await writer.write(request(raw_response=sample_response()))
+
+    assert embedder.calls == [
+        [
+            "technical_document",
+            "technical_specification",
+            "voltage",
+            "product",
+            "product_a",
+        ]
+    ]
+    assert repo.embedding_updates
+    assert repo.information[0].metadata[
+        "document_type_codes"
+    ] == ["technical_document"]
+
+
+@pytest.mark.asyncio
+async def test_registry_embeddings_are_not_regenerated():
+    repo = FakeKnowledgeRepository()
+    embedder = FakeTextEmbeddingProvider()
+    writer = KnowledgeWriter(
+        repo,
+        KnowledgeEmbeddingService(
+            repository=repo,
+            embedder_factory=lambda knowledge_space_id: (
+                fake_embedder(embedder)
+            ),
+        ),
+    )
+
+    await writer.write(request(raw_response=sample_response()))
+    await writer.write(request(raw_response=sample_response()))
+
+    assert len(embedder.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_object_without_identifier_does_not_embed_identifier():
+    repo = FakeKnowledgeRepository()
+    embedder = FakeTextEmbeddingProvider()
+    raw = sample_response(
+        identifier_code=None,
+    )
+
+    await KnowledgeWriter(
+        repo,
+        KnowledgeEmbeddingService(
+            repository=repo,
+            embedder_factory=lambda knowledge_space_id: (
+                fake_embedder(embedder)
+            ),
+        ),
+    ).write(request(raw_response=raw))
+
+    assert "product" in embedder.calls[0]
+    assert None not in embedder.calls[0]
+
+
 def test_knowledge_write_request_document_context_is_not_any():
     hints = get_type_hints(KnowledgeWriteRequest)
 
@@ -627,6 +707,7 @@ class FakeKnowledgeRepository:
         self.objects = {}
         self.topics = {}
         self.information = []
+        self.embedding_updates = []
 
     async def upsert_document_type(self, entity):
         return self._upsert(self.document_types, ("space", entity.code), entity)
@@ -660,6 +741,103 @@ class FakeKnowledgeRepository:
         entity.id = uuid4()
         self.information.append(entity)
         return entity
+
+    async def list_missing_registry_embeddings(
+        self,
+        *,
+        document_type_ids,
+        information_type_ids,
+        information_field_ids,
+        object_ids,
+        topic_ids,
+    ):
+        targets = []
+        stores = [
+            (
+                self.document_types.values(),
+                document_type_ids,
+                KnowledgeRegistryEmbeddingKind.DOCUMENT_TYPE,
+                "code",
+                "embedding",
+            ),
+            (
+                self.information_types.values(),
+                information_type_ids,
+                KnowledgeRegistryEmbeddingKind.INFORMATION_TYPE,
+                "code",
+                "embedding",
+            ),
+            (
+                self.fields.values(),
+                information_field_ids,
+                KnowledgeRegistryEmbeddingKind.INFORMATION_FIELD,
+                "code",
+                "embedding",
+            ),
+            (
+                self.topics.values(),
+                topic_ids,
+                KnowledgeRegistryEmbeddingKind.TOPIC,
+                "code",
+                "embedding",
+            ),
+        ]
+        for entities, ids, kind, code_attr, embedding_attr in stores:
+            for entity in entities:
+                if (
+                    entity.id in ids
+                    and getattr(entity, embedding_attr, None) is None
+                ):
+                    targets.append(
+                        KnowledgeRegistryEmbeddingTarget(
+                            kind=kind,
+                            id=entity.id,
+                            text=getattr(entity, code_attr),
+                        )
+                    )
+        for entity in self.objects.values():
+            if entity.id not in object_ids:
+                continue
+            if getattr(entity, "object_embedding", None) is None:
+                targets.append(
+                    KnowledgeRegistryEmbeddingTarget(
+                        kind=KnowledgeRegistryEmbeddingKind.OBJECT,
+                        id=entity.id,
+                        text=entity.object_code,
+                    )
+                )
+            if (
+                entity.identifier_code is not None
+                and getattr(entity, "identifier_embedding", None) is None
+            ):
+                targets.append(
+                    KnowledgeRegistryEmbeddingTarget(
+                        kind=KnowledgeRegistryEmbeddingKind.IDENTIFIER,
+                        id=entity.id,
+                        text=entity.identifier_code,
+                    )
+                )
+        return targets
+
+    async def update_registry_embeddings(self, updates):
+        self.embedding_updates.extend(updates)
+        for update in updates:
+            for entity in self._all_registry_entities():
+                if entity.id != update.id:
+                    continue
+                if update.kind == KnowledgeRegistryEmbeddingKind.OBJECT:
+                    entity.object_embedding = update.embedding
+                elif update.kind == KnowledgeRegistryEmbeddingKind.IDENTIFIER:
+                    entity.identifier_embedding = update.embedding
+                else:
+                    entity.embedding = update.embedding
+
+    def _all_registry_entities(self):
+        yield from self.document_types.values()
+        yield from self.information_types.values()
+        yield from self.fields.values()
+        yield from self.objects.values()
+        yield from self.topics.values()
 
     @staticmethod
     def _upsert(store, key, entity):
@@ -778,6 +956,22 @@ class RecordingKnowledgeWriter:
 class FailingKnowledgeWriter:
     async def write(self, request):
         raise RuntimeError("knowledge failed")
+
+
+class FakeTextEmbeddingProvider:
+    def __init__(self):
+        self.calls = []
+
+    async def embed_texts(self, texts):
+        self.calls.append(list(texts))
+        return [
+            [float(index + 1)]
+            for index, _ in enumerate(texts)
+        ]
+
+
+async def fake_embedder(embedder):
+    return embedder
 
 
 class FakeIngestionConfigService:

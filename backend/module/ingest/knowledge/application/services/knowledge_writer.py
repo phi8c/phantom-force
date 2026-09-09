@@ -19,6 +19,9 @@ from module.ingest.knowledge.domain.entities import (
 from module.ingest.knowledge.domain.enums import (
     KnowledgeFieldDataType,
 )
+from module.ingest.knowledge.application.services.knowledge_embedding_service import (
+    KnowledgeEmbeddingService,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +32,10 @@ class KnowledgeWriter:
     def __init__(
         self,
         repository: KnowledgeRepository,
+        embedding_service: KnowledgeEmbeddingService | None = None,
     ):
         self._repository = repository
+        self._embedding_service = embedding_service
 
     async def write(
         self,
@@ -70,7 +75,7 @@ class KnowledgeWriter:
             knowledge_space_id,
             working_response,
         )
-        await self._upsert_information_fields(
+        information_fields = await self._upsert_information_fields(
             knowledge_space_id,
             working_response,
         )
@@ -82,6 +87,15 @@ class KnowledgeWriter:
             knowledge_space_id,
             request.document_context,
         )
+
+        if self._embedding_service is not None:
+            await self._embedding_service.ensure_registry_embeddings(
+                document_types=list(document_types.values()),
+                information_types=list(information_types.values()),
+                information_fields=list(information_fields.values()),
+                objects=list(objects.values()),
+                topics=list(topics.values()),
+            )
 
         for ordinal, item in enumerate(working_response["information"]):
             summary = item.get("summary")
@@ -228,15 +242,16 @@ class KnowledgeWriter:
         self,
         knowledge_space_id,
         raw_response: dict[str, Any],
-    ) -> None:
+    ):
 
+        result = {}
         for item in raw_response["information_fields"]:
             code = item.get("code")
             if not code:
                 raise ValueError(
                     "information_fields item missing code",
                 )
-            await self._repository.upsert_information_field(
+            entity = await self._repository.upsert_information_field(
                 KnowledgeInformationField(
                     id=None,
                     knowledge_space_id=knowledge_space_id,
@@ -252,6 +267,8 @@ class KnowledgeWriter:
                     updated_at=None,
                 )
             )
+            result[entity.code] = entity
+        return result
 
     async def _upsert_objects(
         self,

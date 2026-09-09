@@ -17,6 +17,9 @@ from module.ingest.embedding.domain.contracts.embedding_engine import (
 from module.ingest.embedding.domain.contracts.embedding_engine_resolver import (
     EmbeddingEngineResolver,
 )
+from module.ingest.embedding.domain.contracts.text_embedding_provider import (
+    TextEmbeddingProvider,
+)
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_embedding_config_repository_impl import (
     KnowledgeSpaceEmbeddingConfigRepositoryImpl,
 )
@@ -60,10 +63,19 @@ class DbEmbeddingEngineResolver(
                 "Ingestion job is not available"
             )
 
+        return await self.resolve_for_knowledge_space(
+            job.knowledge_space_id,
+        )
+
+    async def resolve_for_knowledge_space(
+        self,
+        knowledge_space_id: UUID,
+    ) -> TextEmbeddingProvider:
+
         embedding_config = (
             await self._embedding_config_repository
             .get_by_knowledge_space_id(
-                job.knowledge_space_id,
+                knowledge_space_id,
             )
         )
 
@@ -129,7 +141,7 @@ class DbEmbeddingEngineResolver(
         provider: str,
         model_name: str,
         deployment: str,
-    ) -> EmbeddingEngine:
+    ) -> LegacyEmbeddingEngineAdapter:
 
         normalized_provider = provider.strip().lower()
 

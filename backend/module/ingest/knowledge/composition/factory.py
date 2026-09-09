@@ -1,5 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from module.ingest.embedding.composition import (
+    create_text_embedding_provider,
+)
+from module.ingest.knowledge.application.services.knowledge_embedding_service import (
+    KnowledgeEmbeddingService,
+)
 from module.ingest.knowledge.application.services.knowledge_reader import (
     KnowledgeReader,
 )
@@ -15,9 +21,19 @@ def create_knowledge_writer(
     session: AsyncSession,
 ) -> KnowledgeWriter:
 
+    repository = KnowledgeRepositoryImpl(
+        session=session,
+    )
     return KnowledgeWriter(
-        repository=KnowledgeRepositoryImpl(
-            session=session,
+        repository=repository,
+        embedding_service=KnowledgeEmbeddingService(
+            repository=repository,
+            embedder_factory=lambda knowledge_space_id: (
+                create_text_embedding_provider(
+                    session=session,
+                    knowledge_space_id=knowledge_space_id,
+                )
+            ),
         ),
     )
 
@@ -26,8 +42,15 @@ def create_knowledge_reader(
     session: AsyncSession,
 ) -> KnowledgeReader:
 
+    repository = KnowledgeRepositoryImpl(
+        session=session,
+    )
     return KnowledgeReader(
-        repository=KnowledgeRepositoryImpl(
-            session=session,
+        repository=repository,
+        embedder_factory=lambda knowledge_space_id: (
+            create_text_embedding_provider(
+                session=session,
+                knowledge_space_id=knowledge_space_id,
+            )
         ),
     )

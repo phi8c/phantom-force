@@ -23,6 +23,10 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeMatchedEntryPointsRecord,
     KnowledgeObject,
     KnowledgeObjectStructureRecord,
+    KnowledgeRegistryEmbeddingKind,
+    KnowledgeRegistryEmbeddingTarget,
+    KnowledgeRegistryEmbeddingUpdate,
+    KnowledgeSemanticSeedVectors,
     KnowledgeTopic,
 )
 from module.ingest.knowledge.infrastructure.persistence.mappers import (
@@ -304,6 +308,103 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             model,
         )
 
+    async def list_missing_registry_embeddings(
+        self,
+        *,
+        document_type_ids: list[UUID],
+        information_type_ids: list[UUID],
+        information_field_ids: list[UUID],
+        object_ids: list[UUID],
+        topic_ids: list[UUID],
+    ) -> list[KnowledgeRegistryEmbeddingTarget]:
+
+        targets: list[KnowledgeRegistryEmbeddingTarget] = []
+        targets.extend(
+            await self._missing_code_embeddings(
+                model_class=KnowledgeDocumentTypeModel,
+                ids=document_type_ids,
+                kind=KnowledgeRegistryEmbeddingKind.DOCUMENT_TYPE,
+            )
+        )
+        targets.extend(
+            await self._missing_code_embeddings(
+                model_class=KnowledgeInformationTypeModel,
+                ids=information_type_ids,
+                kind=KnowledgeRegistryEmbeddingKind.INFORMATION_TYPE,
+            )
+        )
+        targets.extend(
+            await self._missing_code_embeddings(
+                model_class=KnowledgeInformationFieldModel,
+                ids=information_field_ids,
+                kind=KnowledgeRegistryEmbeddingKind.INFORMATION_FIELD,
+            )
+        )
+        targets.extend(
+            await self._missing_code_embeddings(
+                model_class=KnowledgeTopicModel,
+                ids=topic_ids,
+                kind=KnowledgeRegistryEmbeddingKind.TOPIC,
+            )
+        )
+
+        if object_ids:
+            result = await self.session.execute(
+                select(KnowledgeObjectModel).where(
+                    KnowledgeObjectModel.id.in_(object_ids),
+                    or_(
+                        KnowledgeObjectModel.object_embedding.is_(None),
+                        KnowledgeObjectModel.identifier_embedding.is_(None),
+                    ),
+                )
+            )
+            for model in result.scalars().all():
+                if model.object_embedding is None:
+                    targets.append(
+                        KnowledgeRegistryEmbeddingTarget(
+                            kind=KnowledgeRegistryEmbeddingKind.OBJECT,
+                            id=model.id,
+                            text=model.object_code,
+                        )
+                    )
+                if (
+                    model.identifier_code is not None
+                    and model.identifier_embedding is None
+                ):
+                    targets.append(
+                        KnowledgeRegistryEmbeddingTarget(
+                            kind=KnowledgeRegistryEmbeddingKind.IDENTIFIER,
+                            id=model.id,
+                            text=model.identifier_code,
+                        )
+                    )
+        return targets
+
+    async def update_registry_embeddings(
+        self,
+        updates: list[KnowledgeRegistryEmbeddingUpdate],
+    ) -> None:
+
+        for update in updates:
+            model_class, column_name = self._embedding_model_column(
+                update.kind,
+            )
+            result = await self.session.execute(
+                select(model_class).where(
+                    model_class.id == update.id,
+                )
+            )
+            model = result.scalar_one_or_none()
+            if model is None:
+                continue
+            if getattr(model, column_name) is not None:
+                continue
+            setattr(model, column_name, update.embedding)
+            if hasattr(model, "updated_at"):
+                model.updated_at = datetime.now(timezone.utc)
+
+        await self.session.flush()
+
     async def search_information(
         self,
         *,
@@ -487,13 +588,21 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         *,
         knowledge_space_id: UUID,
         seeds: list[dict[str, Any]],
+        seed_vectors: list[KnowledgeSemanticSeedVectors] | None = None,
     ) -> list[KnowledgeDiscoveredSeedRecord]:
 
         discovered: list[KnowledgeDiscoveredSeedRecord] = []
+        vectors_by_seed_id = {
+            item.seed_id: item
+            for item in seed_vectors or []
+        }
         for seed in seeds:
             seed_record = await self._discover_seed(
                 knowledge_space_id=knowledge_space_id,
                 seed=seed,
+                seed_vectors=vectors_by_seed_id.get(
+                    str(seed["seed_id"]),
+                ),
             )
             if seed_record is not None:
                 discovered.append(seed_record)
@@ -622,6 +731,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         *,
         knowledge_space_id: UUID,
         seed: dict[str, Any],
+        seed_vectors: KnowledgeSemanticSeedVectors | None = None,
     ) -> KnowledgeDiscoveredSeedRecord | None:
 
         matched_entry_points = KnowledgeMatchedEntryPointsRecord(
@@ -629,16 +739,36 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 knowledge_space_id=knowledge_space_id,
                 object_code=seed.get("object_code"),
                 identifier_code=seed.get("identifier_code"),
+                object_vector=(
+                    seed_vectors.object_vector
+                    if seed_vectors is not None
+                    else None
+                ),
+                identifier_vector=(
+                    seed_vectors.identifier_vector
+                    if seed_vectors is not None
+                    else None
+                ),
             ),
             information_types=await self._match_information_types(
                 knowledge_space_id=knowledge_space_id,
                 information_type_code=seed.get(
                     "information_type_code",
                 ),
+                information_type_vector=(
+                    seed_vectors.information_type_vector
+                    if seed_vectors is not None
+                    else None
+                ),
             ),
             topics=await self._match_topics(
                 knowledge_space_id=knowledge_space_id,
                 topic_codes=seed.get("topic_codes", []),
+                topic_vectors=(
+                    seed_vectors.topic_vectors
+                    if seed_vectors is not None
+                    else None
+                ),
             ),
         )
         base_filters = self._entry_point_filters_from_matches(
@@ -683,72 +813,144 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         knowledge_space_id: UUID,
         object_code: str | None,
         identifier_code: str | None,
+        object_vector: list[float] | None = None,
+        identifier_vector: list[float] | None = None,
     ) -> list[KnowledgeObjectStructureRecord]:
 
-        if object_code is None:
+        if object_code is None and identifier_code is None:
             return []
 
-        statement = select(KnowledgeObjectModel).where(
-            KnowledgeObjectModel.knowledge_space_id
-            == knowledge_space_id,
-            KnowledgeObjectModel.object_code == object_code,
-        )
-        if identifier_code is not None:
-            statement = statement.where(
-                KnowledgeObjectModel.identifier_code
-                == identifier_code,
+        exact_models = []
+        if object_code is not None:
+            statement = select(KnowledgeObjectModel).where(
+                KnowledgeObjectModel.knowledge_space_id
+                == knowledge_space_id,
+                KnowledgeObjectModel.object_code == object_code,
             )
+            if identifier_code is not None:
+                statement = statement.where(
+                    KnowledgeObjectModel.identifier_code
+                    == identifier_code,
+                )
+            result = await self.session.execute(statement)
+            exact_models = list(result.scalars().all())
+        elif identifier_code is not None:
+            result = await self.session.execute(
+                select(KnowledgeObjectModel).where(
+                    KnowledgeObjectModel.knowledge_space_id
+                    == knowledge_space_id,
+                    KnowledgeObjectModel.identifier_code
+                    == identifier_code,
+                )
+            )
+            exact_models = list(result.scalars().all())
 
-        result = await self.session.execute(statement)
-        return [
+        candidates = [
             self._object_record(model)
-            for model in result.scalars().all()
+            for model in exact_models
         ]
+        seen = {
+            (
+                item.object_code,
+                item.identifier_code,
+            )
+            for item in candidates
+        }
+
+        if object_vector is not None:
+            candidates.extend(
+                await self._vector_object_candidates(
+                    knowledge_space_id=knowledge_space_id,
+                    vector=object_vector,
+                    column=KnowledgeObjectModel.object_embedding,
+                    seen=seen,
+                )
+            )
+        if identifier_vector is not None:
+            candidates.extend(
+                await self._vector_object_candidates(
+                    knowledge_space_id=knowledge_space_id,
+                    vector=identifier_vector,
+                    column=KnowledgeObjectModel.identifier_embedding,
+                    seen=seen,
+                )
+            )
+        return candidates
 
     async def _match_information_types(
         self,
         *,
         knowledge_space_id: UUID,
         information_type_code: str | None,
+        information_type_vector: list[float] | None = None,
     ) -> list[KnowledgeCodeStructureRecord]:
 
-        if information_type_code is None:
+        if information_type_code is None and information_type_vector is None:
             return []
 
-        result = await self.session.execute(
-            select(KnowledgeInformationTypeModel).where(
-                KnowledgeInformationTypeModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeInformationTypeModel.code
-                == information_type_code,
+        candidates = []
+        if information_type_code is not None:
+            result = await self.session.execute(
+                select(KnowledgeInformationTypeModel).where(
+                    KnowledgeInformationTypeModel.knowledge_space_id
+                    == knowledge_space_id,
+                    KnowledgeInformationTypeModel.code
+                    == information_type_code,
+                )
+            )
+            candidates.extend(
+                self._information_type_record(model)
+                for model in result.scalars().all()
+            )
+
+        candidates.extend(
+            await self._vector_code_candidates(
+                model_class=KnowledgeInformationTypeModel,
+                record_factory=self._information_type_record,
+                knowledge_space_id=knowledge_space_id,
+                vector=information_type_vector,
+                seen={item.code for item in candidates},
             )
         )
-        return [
-            self._information_type_record(model)
-            for model in result.scalars().all()
-        ]
+        return candidates
 
     async def _match_topics(
         self,
         *,
         knowledge_space_id: UUID,
         topic_codes: list[str],
+        topic_vectors: dict[str, list[float]] | None = None,
     ) -> list[KnowledgeCodeStructureRecord]:
 
-        if not topic_codes:
+        if not topic_codes and not topic_vectors:
             return []
 
-        result = await self.session.execute(
-            select(KnowledgeTopicModel).where(
-                KnowledgeTopicModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeTopicModel.code.in_(topic_codes),
+        candidates = []
+        if topic_codes:
+            result = await self.session.execute(
+                select(KnowledgeTopicModel).where(
+                    KnowledgeTopicModel.knowledge_space_id
+                    == knowledge_space_id,
+                    KnowledgeTopicModel.code.in_(topic_codes),
+                )
             )
-        )
-        return [
-            self._topic_record(model)
-            for model in result.scalars().all()
-        ]
+            candidates.extend(
+                self._topic_record(model)
+                for model in result.scalars().all()
+            )
+
+        seen = {item.code for item in candidates}
+        for vector in (topic_vectors or {}).values():
+            candidates.extend(
+                await self._vector_code_candidates(
+                    model_class=KnowledgeTopicModel,
+                    record_factory=self._topic_record,
+                    knowledge_space_id=knowledge_space_id,
+                    vector=vector,
+                    seen=seen,
+                )
+            )
+        return candidates
 
     async def _load_reachable_structure_rows(
         self,
@@ -878,6 +1080,132 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             )
             for code in sorted(field_codes)
         ]
+
+    async def _vector_code_candidates(
+        self,
+        *,
+        model_class,
+        record_factory,
+        knowledge_space_id: UUID,
+        vector: list[float] | None,
+        seen: set[str],
+        top_k: int = 5,
+    ) -> list[KnowledgeCodeStructureRecord]:
+
+        if vector is None:
+            return []
+
+        distance = model_class.embedding.cosine_distance(vector)
+        result = await self.session.execute(
+            select(model_class)
+            .where(
+                model_class.knowledge_space_id == knowledge_space_id,
+                model_class.embedding.is_not(None),
+            )
+            .order_by(distance)
+            .limit(top_k)
+        )
+
+        records = []
+        for model in result.scalars().all():
+            if model.code in seen:
+                continue
+            seen.add(model.code)
+            records.append(record_factory(model))
+        return records
+
+    async def _vector_object_candidates(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        vector: list[float],
+        column,
+        seen: set[tuple[str, str | None]],
+        top_k: int = 5,
+    ) -> list[KnowledgeObjectStructureRecord]:
+
+        distance = column.cosine_distance(vector)
+        result = await self.session.execute(
+            select(KnowledgeObjectModel)
+            .where(
+                KnowledgeObjectModel.knowledge_space_id
+                == knowledge_space_id,
+                column.is_not(None),
+            )
+            .order_by(distance)
+            .limit(top_k)
+        )
+
+        records = []
+        for model in result.scalars().all():
+            key = (
+                model.object_code,
+                model.identifier_code,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            records.append(self._object_record(model))
+        return records
+
+    async def _missing_code_embeddings(
+        self,
+        *,
+        model_class,
+        ids: list[UUID],
+        kind: KnowledgeRegistryEmbeddingKind,
+    ) -> list[KnowledgeRegistryEmbeddingTarget]:
+
+        if not ids:
+            return []
+
+        result = await self.session.execute(
+            select(model_class).where(
+                model_class.id.in_(ids),
+                model_class.embedding.is_(None),
+            )
+        )
+        return [
+            KnowledgeRegistryEmbeddingTarget(
+                kind=kind,
+                id=model.id,
+                text=model.code,
+            )
+            for model in result.scalars().all()
+        ]
+
+    @staticmethod
+    def _embedding_model_column(
+        kind: KnowledgeRegistryEmbeddingKind,
+    ):
+
+        mapping = {
+            KnowledgeRegistryEmbeddingKind.DOCUMENT_TYPE: (
+                KnowledgeDocumentTypeModel,
+                "embedding",
+            ),
+            KnowledgeRegistryEmbeddingKind.TOPIC: (
+                KnowledgeTopicModel,
+                "embedding",
+            ),
+            KnowledgeRegistryEmbeddingKind.OBJECT: (
+                KnowledgeObjectModel,
+                "object_embedding",
+            ),
+            KnowledgeRegistryEmbeddingKind.IDENTIFIER: (
+                KnowledgeObjectModel,
+                "identifier_embedding",
+            ),
+            KnowledgeRegistryEmbeddingKind.INFORMATION_TYPE: (
+                KnowledgeInformationTypeModel,
+                "embedding",
+            ),
+            KnowledgeRegistryEmbeddingKind.INFORMATION_FIELD: (
+                KnowledgeInformationFieldModel,
+                "embedding",
+            ),
+        }
+        return mapping[kind]
 
     def _entry_point_filters(
         self,

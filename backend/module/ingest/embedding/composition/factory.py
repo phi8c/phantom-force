@@ -56,6 +56,19 @@ def create_embed_batch_use_case(
     )
 
 
+async def create_text_embedding_provider(
+    *,
+    session,
+    knowledge_space_id,
+):
+
+    return await DbEmbeddingEngineResolver(
+        session=session,
+    ).resolve_for_knowledge_space(
+        knowledge_space_id,
+    )
+
+
 @asynccontextmanager
 async def create_embed_batch_use_case_scope(
     *,

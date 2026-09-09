@@ -5,10 +5,14 @@ from module.ingest.embedding.domain.contracts.embedding_engine import (
     EmbeddingEngine,
     EmbeddingResult,
 )
+from module.ingest.embedding.domain.contracts.text_embedding_provider import (
+    TextEmbeddingProvider,
+)
 
 
 class LegacyEmbeddingEngineAdapter(
     EmbeddingEngine,
+    TextEmbeddingProvider,
 ):
 
     def __init__(
@@ -29,12 +33,8 @@ class LegacyEmbeddingEngineAdapter(
         if not chunks:
             return []
 
-        client = self._get_client()
-        deployment = self._get_deployment()
-
-        response = await client.embeddings.create(
-            model=deployment,
-            input=[
+        vectors = await self.embed_texts(
+            [
                 chunk.content
                 for chunk in chunks
             ],
@@ -43,21 +43,39 @@ class LegacyEmbeddingEngineAdapter(
         return [
             EmbeddingResult(
                 chunk_id=chunk.id,
-                vector=list(item.embedding),
+                vector=vector,
                 model_name=(
                     self._model_name
-                    or deployment
+                    or self._get_deployment()
                 ),
-                dimension=len(item.embedding),
+                dimension=len(vector),
                 token_count=None,
                 status="success",
                 error_message=None,
             )
-            for chunk, item in zip(
+            for chunk, vector in zip(
                 chunks,
-                response.data,
+                vectors,
                 strict=True,
             )
+        ]
+
+    async def embed_texts(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]:
+
+        if not texts:
+            return []
+
+        response = await self._get_client().embeddings.create(
+            model=self._get_deployment(),
+            input=texts,
+        )
+
+        return [
+            list(item.embedding)
+            for item in response.data
         ]
 
     def _get_client(self):

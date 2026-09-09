@@ -1,4 +1,7 @@
 import logging
+from collections.abc import Awaitable
+from collections.abc import Callable
+from uuid import UUID
 
 from module.ingest.knowledge.application.dtos.knowledge_search_request import (
     KnowledgeSearchRequest,
@@ -24,6 +27,10 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeDiscoveredSeedRecord,
     KnowledgeMatchedEntryPointsRecord,
     KnowledgeObjectStructureRecord,
+    KnowledgeSemanticSeedVectors,
+)
+from module.ingest.embedding.domain.contracts.text_embedding_provider import (
+    TextEmbeddingProvider,
 )
 
 
@@ -35,8 +42,13 @@ class KnowledgeReader:
     def __init__(
         self,
         repository: KnowledgeRepository,
+        embedder_factory: Callable[
+            [UUID],
+            Awaitable[TextEmbeddingProvider],
+        ] | None = None,
     ):
         self._repository = repository
+        self._embedder_factory = embedder_factory
 
     async def search_information(
         self,
@@ -93,6 +105,10 @@ class KnowledgeReader:
             len(request.seeds),
         )
 
+        seed_vectors = await self._embed_seed_strings(
+            request,
+        )
+
         records = await self._repository.discover(
             knowledge_space_id=request.knowledge_space_id,
             seeds=[
@@ -108,6 +124,7 @@ class KnowledgeReader:
                 }
                 for seed in request.seeds
             ],
+            seed_vectors=seed_vectors,
         )
 
         seeds = [
@@ -211,6 +228,71 @@ class KnowledgeReader:
                 for record in records
             ],
         )
+
+    async def _embed_seed_strings(
+        self,
+        request: KnowledgeDiscoveryRequest,
+    ) -> list[KnowledgeSemanticSeedVectors] | None:
+
+        if self._embedder_factory is None:
+            return None
+
+        texts = []
+        for seed in request.seeds:
+            for text in (
+                seed.object_code,
+                seed.identifier_code,
+                seed.information_type_code,
+            ):
+                if text:
+                    texts.append(text)
+            texts.extend(seed.topic_codes)
+
+        unique_texts = list(dict.fromkeys(texts))
+        if not unique_texts:
+            return []
+
+        embedder = await self._embedder_factory(
+            request.knowledge_space_id,
+        )
+        vectors = await embedder.embed_texts(unique_texts)
+        vector_by_text = dict(
+            zip(unique_texts, vectors, strict=True),
+        )
+
+        logger.info(
+            "[KNOWLEDGE_DISCOVERY] embedded_seeds space=%s input_count=%s unique_count=%s",
+            request.knowledge_space_id,
+            len(texts),
+            len(unique_texts),
+        )
+
+        return [
+            KnowledgeSemanticSeedVectors(
+                seed_id=seed.seed_id,
+                object_vector=(
+                    vector_by_text.get(seed.object_code)
+                    if seed.object_code
+                    else None
+                ),
+                identifier_vector=(
+                    vector_by_text.get(seed.identifier_code)
+                    if seed.identifier_code
+                    else None
+                ),
+                information_type_vector=(
+                    vector_by_text.get(seed.information_type_code)
+                    if seed.information_type_code
+                    else None
+                ),
+                topic_vectors={
+                    topic_code: vector_by_text[topic_code]
+                    for topic_code in seed.topic_codes
+                    if topic_code in vector_by_text
+                },
+            )
+            for seed in request.seeds
+        ]
 
     @classmethod
     def _discovered_seed(cls, record) -> KnowledgeDiscoveredSeed:

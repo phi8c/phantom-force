@@ -11,6 +11,9 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeInformationSearchRecord,
     KnowledgeInformationType,
     KnowledgeObject,
+    KnowledgeRegistryEmbeddingTarget,
+    KnowledgeRegistryEmbeddingUpdate,
+    KnowledgeSemanticSeedVectors,
     KnowledgeTopic,
 )
 
@@ -61,6 +64,25 @@ class KnowledgeRepository(ABC):
         pass
 
     @abstractmethod
+    async def list_missing_registry_embeddings(
+        self,
+        *,
+        document_type_ids: list[UUID],
+        information_type_ids: list[UUID],
+        information_field_ids: list[UUID],
+        object_ids: list[UUID],
+        topic_ids: list[UUID],
+    ) -> list[KnowledgeRegistryEmbeddingTarget]:
+        pass
+
+    @abstractmethod
+    async def update_registry_embeddings(
+        self,
+        updates: list[KnowledgeRegistryEmbeddingUpdate],
+    ) -> None:
+        pass
+
+    @abstractmethod
     async def search_information(
         self,
         *,
@@ -78,6 +100,7 @@ class KnowledgeRepository(ABC):
         *,
         knowledge_space_id: UUID,
         seeds: list[dict[str, Any]],
+        seed_vectors: list[KnowledgeSemanticSeedVectors] | None = None,
     ) -> list[KnowledgeDiscoveredSeedRecord]:
         pass
 
