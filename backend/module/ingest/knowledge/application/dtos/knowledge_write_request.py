@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from module.ingest.knowledge.application.dtos.knowledge_document_context import (
+    KnowledgeDocumentContext,
+)
+
 
 @dataclass(frozen=True)
 class KnowledgeWriteRequest:
@@ -10,4 +14,4 @@ class KnowledgeWriteRequest:
     chunk_id: UUID
     model_name: str
     raw_response: dict[str, Any]
-    document_context: Any | None = None
+    document_context: KnowledgeDocumentContext | None = None

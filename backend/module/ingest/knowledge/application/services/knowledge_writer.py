@@ -37,14 +37,17 @@ class KnowledgeWriter:
         request: KnowledgeWriteRequest,
     ) -> None:
 
-        raw_response = self._validate_response(
-            deepcopy(request.raw_response or {}),
+        model_raw_response = deepcopy(
+            request.raw_response or {},
+        )
+        self._validate_response(
+            model_raw_response,
             has_document_context=(
                 request.document_context is not None
             ),
         )
-        raw_response = self._with_document_context(
-            raw_response,
+        working_response = self._with_document_context(
+            deepcopy(model_raw_response),
             request.document_context,
         )
         knowledge_space_id = request.knowledge_space_id
@@ -56,31 +59,31 @@ class KnowledgeWriter:
             request.document_id,
             request.chunk_id,
             request.model_name,
-            len(raw_response["information"]),
+            len(working_response["information"]),
         )
 
         document_types = await self._upsert_document_types(
             knowledge_space_id,
-            raw_response,
+            working_response,
         )
         information_types = await self._upsert_information_types(
             knowledge_space_id,
-            raw_response,
+            working_response,
         )
         await self._upsert_information_fields(
             knowledge_space_id,
-            raw_response,
+            working_response,
         )
         objects = await self._upsert_objects(
             knowledge_space_id,
-            raw_response,
+            working_response,
         )
         topics = await self._upsert_topics(
             knowledge_space_id,
-            raw_response,
+            working_response,
         )
 
-        for ordinal, item in enumerate(raw_response["information"]):
+        for ordinal, item in enumerate(working_response["information"]):
             summary = item.get("summary")
             if not summary:
                 raise ValueError(
@@ -133,7 +136,7 @@ class KnowledgeWriter:
                         }
                     ],
                     confidence=source_confidence,
-                    raw_model_output=raw_response,
+                    raw_model_output=model_raw_response,
                     metadata={
                         "model_name": request.model_name,
                         "document_type_codes": [
@@ -549,8 +552,8 @@ class KnowledgeWriter:
 
         merged: dict[str, dict[str, Any]] = {}
         for topic in [
-            *document_topics,
             *local_topics,
+            *document_topics,
         ]:
             code = topic.get("code")
             if not code:

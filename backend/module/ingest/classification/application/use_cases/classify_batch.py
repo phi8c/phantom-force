@@ -8,6 +8,10 @@ from module.ingest.config.composition import (
     IngestionConfigService,
 )
 from module.ingest.knowledge.composition import (
+    KnowledgeDocumentContext,
+    KnowledgeDocumentTypeContext,
+    KnowledgeHeadContext,
+    KnowledgeTopicContext,
     KnowledgeWriteRequest,
     KnowledgeWriter,
 )
@@ -230,7 +234,11 @@ class ClassifyBatchUseCase:
                             chunk_id=result.chunk_id,
                             model_name=result.model_name,
                             raw_response=result.raw_response,
-                            document_context=document_context,
+                            document_context=(
+                                self._knowledge_document_context(
+                                    document_context,
+                                )
+                            ),
                         )
                     )
                 except Exception as exc:
@@ -597,3 +605,35 @@ class ClassifyBatchUseCase:
             await self.batch_finalizer.dispatch_index(
                 task.ingestion_job_id,
             )
+
+    @staticmethod
+    def _knowledge_document_context(
+        document_context,
+    ) -> KnowledgeDocumentContext:
+
+        return KnowledgeDocumentContext(
+            document_type=KnowledgeDocumentTypeContext(
+                code=document_context.document_type.code,
+                name=document_context.document_type.name,
+                description=(
+                    document_context.document_type.description
+                ),
+                metadata=document_context.document_type.metadata,
+            ),
+            topics=[
+                KnowledgeTopicContext(
+                    code=topic.code,
+                    name=topic.name,
+                    description=topic.description,
+                    metadata=topic.metadata,
+                )
+                for topic in document_context.topics
+            ],
+            head=KnowledgeHeadContext(
+                type=document_context.head.type,
+                code=document_context.head.code,
+                name=document_context.head.name,
+                description=document_context.head.description,
+                metadata=document_context.head.metadata,
+            ),
+        )

@@ -6,15 +6,15 @@ from module.ai.llm.domain.value_objects.llm_result import (
     LLMResult,
 )
 from module.ingest.chunking.composition import ExtractedAsset
-from module.ingest.classification.application.services.document_structure_analyzer import (
-    DocumentStructureAnalyzer,
+from module.ingest.classification.infrastructure.engine.llm_document_structure_analyzer import (
+    LLMDocumentStructureAnalyzer,
     MAX_FALLBACK_TEXT_CHARS,
 )
 from module.prompt.domain.entities.prompt import Prompt
 
 
 def test_extract_headings_supports_nested_children():
-    headings = DocumentStructureAnalyzer.extract_headings(
+    headings = LLMDocumentStructureAnalyzer.extract_headings(
         [
             {
                 "level": 0,
@@ -46,7 +46,7 @@ def test_extract_headings_supports_nested_children():
 
 
 def test_document_payload_uses_headings_without_content_fallback():
-    payload = DocumentStructureAnalyzer._build_document_payload(
+    payload = LLMDocumentStructureAnalyzer._build_document_payload(
         {
             "file_name": "report.pdf",
             "sections": [
@@ -70,7 +70,7 @@ def test_document_payload_uses_headings_without_content_fallback():
 
 
 def test_document_payload_fallback_is_limited_when_no_headings():
-    payload = DocumentStructureAnalyzer._build_document_payload(
+    payload = LLMDocumentStructureAnalyzer._build_document_payload(
         {
             "title": "Untitled",
             "sections": [
@@ -87,7 +87,7 @@ def test_document_payload_fallback_is_limited_when_no_headings():
 
 @pytest.mark.asyncio
 async def test_analyze_validates_required_response_contract():
-    analyzer = DocumentStructureAnalyzer(
+    analyzer = LLMDocumentStructureAnalyzer(
         extracted_asset_reader=FakeExtractedAssetReader(
             {
                 "file_name": "report.pdf",
@@ -117,7 +117,7 @@ async def test_analyze_validates_required_response_contract():
 
 @pytest.mark.asyncio
 async def test_analyze_rejects_invalid_response_contract():
-    analyzer = DocumentStructureAnalyzer(
+    analyzer = LLMDocumentStructureAnalyzer(
         extracted_asset_reader=FakeExtractedAssetReader(
             {
                 "sections": [],

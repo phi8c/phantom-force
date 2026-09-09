@@ -8,8 +8,9 @@ from module.ingest.classification.application.dtos.document_context import (
     DocumentContextHead,
     DocumentContextTopic,
 )
-from module.ingest.classification.application.services.document_structure_analyzer import (
-    DocumentStructureAnalyzer,
+from module.ingest.classification.infrastructure.engine.llm_document_structure_analyzer import (
+    LLMDocumentStructureAnalyzer as DocumentStructureAnalyzer,
+    LLMDocumentStructureAnalyzer,
 )
 from module.ingest.classification.domain.contracts.batch_finalizer import (
     BatchFinalizer,
@@ -54,6 +55,7 @@ __all__ = [
     "DocumentContextTopic",
     "DocumentStructureAnalyzer",
     "DocumentStructureAnalyzerContract",
+    "LLMDocumentStructureAnalyzer",
     "create_classify_batch_use_case",
     "create_classify_batch_use_case_scope",
     "create_document_structure_analyzer",

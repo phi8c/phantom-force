@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 MAX_FALLBACK_TEXT_CHARS = 4000
 
 
-class DocumentStructureAnalyzer(
+class LLMDocumentStructureAnalyzer(
     DocumentStructureAnalyzerContract,
 ):
 

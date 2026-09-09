@@ -1,6 +1,8 @@
 from uuid import uuid4
 from pathlib import Path
 from copy import deepcopy
+from typing import Any
+from typing import get_type_hints
 
 import pytest
 
@@ -17,15 +19,14 @@ from module.ingest.classification.domain.enums.task_status import (
     TaskStatus,
 )
 from module.ingest.knowledge.application.dtos import (
+    KnowledgeDocumentContext,
+    KnowledgeDocumentTypeContext,
+    KnowledgeHeadContext,
+    KnowledgeTopicContext,
     KnowledgeWriteRequest,
 )
 from module.ingest.knowledge.application.services.knowledge_writer import (
     KnowledgeWriter,
-)
-from module.ingest.classification.composition import (
-    DocumentContext,
-    DocumentContextDocumentType,
-    DocumentContextTopic,
 )
 
 
@@ -276,6 +277,77 @@ async def test_document_context_merge_does_not_mutate_input_response():
 
 
 @pytest.mark.asyncio
+async def test_raw_model_output_keeps_original_chunk_llm_output():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+    original = deepcopy(raw)
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    assert repo.information[0].raw_model_output == original
+    assert "document_type" not in repo.information[0].raw_model_output
+    assert "document_context" not in repo.information[0].raw_model_output
+    assert repo.information[0].raw_model_output["information"][0][
+        "topic_refs"
+    ] == ["railway_safety"]
+
+
+@pytest.mark.asyncio
+async def test_document_topic_wins_over_local_topic_with_same_code():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+    raw["topics"].append(
+        {
+            "code": "technical_maintenance",
+            "name": "Local maintenance",
+            "description": "Local description",
+            "metadata": {
+                "source": "local",
+            },
+        }
+    )
+    raw["information"][0]["topic_refs"].append(
+        "technical_maintenance",
+    )
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    topic = repo.topics[("space", "technical_maintenance")]
+    assert topic.name == "Technical maintenance"
+    assert topic.description == "Document description"
+    assert topic.metadata == {
+        "source": "document",
+    }
+    topic_codes = [
+        ref["code"]
+        for ref in repo.information[0].topic_refs
+    ]
+    assert topic_codes == [
+        "railway_safety",
+        "technical_maintenance",
+    ]
+
+
+def test_knowledge_write_request_document_context_is_not_any():
+    hints = get_type_hints(KnowledgeWriteRequest)
+
+    assert hints["document_context"] != Any
+    assert "Any" not in str(hints["document_context"])
+
+
+@pytest.mark.asyncio
 async def test_classification_passes_knowledge_space_id_to_write_request():
     task = ClassificationTask(
         id=uuid4(),
@@ -293,11 +365,14 @@ async def test_classification_passes_knowledge_space_id_to_write_request():
     )
     writer = RecordingKnowledgeWriter()
     classification_repository = FakeClassificationRepository()
+    document_structure_analyzer = FakeDocumentStructureAnalyzer()
     use_case = ClassifyBatchUseCase(
         task_repository=FakeTaskRepository(task),
         chunk_reader=FakeChunkReader(),
-        document_structure_analyzer=FakeDocumentStructureAnalyzer(),
-        classification_engine=FakeClassificationEngine(),
+        document_structure_analyzer=document_structure_analyzer,
+        classification_engine=FakeClassificationEngine(
+            document_structure_analyzer=document_structure_analyzer,
+        ),
         classification_repository=classification_repository,
         batch_finalizer=SuccessfulBatchFinalizer(),
         knowledge_writer=writer,
@@ -309,8 +384,13 @@ async def test_classification_passes_knowledge_space_id_to_write_request():
 
     assert writer.requests[0].knowledge_space_id == "space"
     assert writer.requests[0].document_context is not None
+    assert isinstance(
+        writer.requests[0].document_context,
+        KnowledgeDocumentContext,
+    )
     assert classification_repository.classifications[0].label == "2"
     assert classification_repository.classifications[0].confidence is None
+    assert use_case.document_structure_analyzer.calls == 1
 
 
 @pytest.mark.asyncio
@@ -360,17 +440,22 @@ def request(raw_response, document_context=None):
 
 
 def sample_document_context():
-    return DocumentContext(
-        document_type=DocumentContextDocumentType(
+    return KnowledgeDocumentContext(
+        document_type=KnowledgeDocumentTypeContext(
             code="technical_document",
             name="Technical document",
         ),
         topics=[
-            DocumentContextTopic(
+            KnowledgeTopicContext(
                 code="technical_maintenance",
                 name="Technical maintenance",
+                description="Document description",
+                metadata={
+                    "source": "document",
+                },
             ),
         ],
+        head=KnowledgeHeadContext(),
     )
 
 
@@ -503,7 +588,14 @@ class FakeChunkReader:
 
 
 class FakeClassificationEngine:
+    def __init__(self, document_structure_analyzer=None):
+        self.document_structure_analyzer = (
+            document_structure_analyzer
+        )
+
     async def classify_batch(self, chunks, document_context):
+        if self.document_structure_analyzer is not None:
+            assert self.document_structure_analyzer.calls == 1
         return [
             ClassificationResult(
                 chunk_id=uuid4(),
@@ -514,16 +606,31 @@ class FakeClassificationEngine:
 
 
 class FakeDocumentStructureAnalyzer:
+    def __init__(self):
+        self.calls = 0
+
     async def analyze(self, *, ingestion_job_id, document_id):
+        self.calls += 1
         from module.ingest.classification.composition import (
             DocumentContext,
             DocumentContextDocumentType,
+            DocumentContextTopic,
         )
 
         return DocumentContext(
             document_type=DocumentContextDocumentType(
                 code="technical_document",
             ),
+            topics=[
+                DocumentContextTopic(
+                    code="technical_maintenance",
+                    name="Technical maintenance",
+                    description="Document description",
+                    metadata={
+                        "source": "document",
+                    },
+                )
+            ],
         )
 
 

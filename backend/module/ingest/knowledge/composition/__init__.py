@@ -9,6 +9,12 @@ from module.ingest.knowledge.application.dtos.knowledge_discovery import (
     KnowledgeRetrievalRequest,
     KnowledgeRetrievalSelection,
 )
+from module.ingest.knowledge.application.dtos.knowledge_document_context import (
+    KnowledgeDocumentContext,
+    KnowledgeDocumentTypeContext,
+    KnowledgeHeadContext,
+    KnowledgeTopicContext,
+)
 from module.ingest.knowledge.application.dtos.knowledge_search_request import (
     KnowledgeSearchRequest,
 )
@@ -36,6 +42,9 @@ __all__ = [
     "KnowledgeDiscoveryRequest",
     "KnowledgeDiscoveryResult",
     "KnowledgeDiscoverySeed",
+    "KnowledgeDocumentContext",
+    "KnowledgeDocumentTypeContext",
+    "KnowledgeHeadContext",
     "KnowledgeMatchedEntryPoints",
     "KnowledgeReader",
     "KnowledgeObjectStructure",
@@ -44,6 +53,7 @@ __all__ = [
     "KnowledgeSearchItem",
     "KnowledgeSearchRequest",
     "KnowledgeSearchResult",
+    "KnowledgeTopicContext",
     "KnowledgeWriteRequest",
     "KnowledgeWriter",
     "create_knowledge_reader",

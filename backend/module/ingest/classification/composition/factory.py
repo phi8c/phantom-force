@@ -10,9 +10,6 @@ from module.ingest.config.composition import (
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
-from module.ingest.classification.application.services.document_structure_analyzer import (
-    DocumentStructureAnalyzer,
-)
 from module.ingest.classification.domain.contracts.batch_finalizer import (
     BatchFinalizer,
 )
@@ -33,6 +30,9 @@ from module.ingest.classification.infrastructure.persistence.sqlalchemy_unit_of_
 )
 from module.ingest.classification.infrastructure.engine.llm_classification_engine import (
     LLMClassificationEngine,
+)
+from module.ingest.classification.infrastructure.engine.llm_document_structure_analyzer import (
+    LLMDocumentStructureAnalyzer,
 )
 from module.ingest.knowledge.composition import (
     create_knowledge_writer,
@@ -107,7 +107,7 @@ def create_document_structure_analyzer(
     prompt_provider=None,
     llm_gateway=None,
     session=None,
-) -> DocumentStructureAnalyzer:
+) -> LLMDocumentStructureAnalyzer:
 
     if prompt_provider is None:
         if session is None:
@@ -127,7 +127,7 @@ def create_document_structure_analyzer(
             session,
         )
 
-    return DocumentStructureAnalyzer(
+    return LLMDocumentStructureAnalyzer(
         extracted_asset_reader=extracted_asset_reader,
         prompt_provider=prompt_provider,
         llm_gateway=llm_gateway,
