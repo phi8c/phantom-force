@@ -401,8 +401,10 @@ async def run_worker(worker_name: str) -> None:
 
         elif worker_name == "classification":
             logger.info("worker creating name=classification")
+            file_storage = create_file_storage()
             worker = create_classification_worker(
                 queues=queues,
+                file_storage=file_storage,
             )
 
         else:

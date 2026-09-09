@@ -23,6 +23,9 @@ from module.ingest.classification.domain.contracts.chunk_reader import (
 from module.ingest.classification.domain.contracts.classification_engine import (
     ClassificationEngine,
 )
+from module.ingest.classification.domain.contracts.document_structure_analyzer import (
+    DocumentStructureAnalyzer,
+)
 from module.ingest.classification.domain.contracts.classification_task_repository import (
     ClassificationTaskRepository,
 )
@@ -47,6 +50,7 @@ class ClassifyBatchUseCase:
         *,
         task_repository: ClassificationTaskRepository,
         chunk_reader: ChunkReader,
+        document_structure_analyzer: DocumentStructureAnalyzer,
         classification_engine: ClassificationEngine,
         classification_repository: ChunkClassificationRepository,
         batch_finalizer: BatchFinalizer,
@@ -57,6 +61,9 @@ class ClassifyBatchUseCase:
     ):
         self.task_repository = task_repository
         self.chunk_reader = chunk_reader
+        self.document_structure_analyzer = (
+            document_structure_analyzer
+        )
         self.classification_engine = classification_engine
         self.classification_repository = (
             classification_repository
@@ -116,6 +123,28 @@ class ClassifyBatchUseCase:
             )
 
             logger.info(
+                "classification document_context_start task_id=%s document_id=%s",
+                task_id,
+                task.document_id,
+            )
+            document_context = await (
+                self.document_structure_analyzer
+                .analyze(
+                    ingestion_job_id=task.ingestion_job_id,
+                    document_id=task.document_id,
+                )
+            )
+            logger.info(
+                "classification document_context_done task_id=%s document_type=%s topics=%s",
+                task_id,
+                document_context.document_type.code,
+                [
+                    topic.code
+                    for topic in document_context.topics
+                ],
+            )
+
+            logger.info(
                 "classification engine_start task_id=%s chunks=%s",
                 task_id,
                 len(chunks),
@@ -124,6 +153,7 @@ class ClassifyBatchUseCase:
                 self.classification_engine
                 .classify_batch(
                     chunks,
+                    document_context=document_context,
                 )
             )
             logger.info(
@@ -200,14 +230,14 @@ class ClassifyBatchUseCase:
                             chunk_id=result.chunk_id,
                             model_name=result.model_name,
                             raw_response=result.raw_response,
+                            document_context=document_context,
                         )
                     )
                 except Exception as exc:
                     logger.error(
-                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s error=%s",
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s error=%s",
                         task.id,
                         result.chunk_id,
-                        result.raw_response,
                         exc,
                     )
                     raise
@@ -329,7 +359,6 @@ class ClassifyBatchUseCase:
             return
 
         required_types = {
-            "document_type": dict,
             "objects": list,
             "information_types": list,
             "information_fields": list,
@@ -340,10 +369,9 @@ class ClassifyBatchUseCase:
         for key, expected_type in required_types.items():
             if key not in raw_response:
                 logger.error(
-                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s",
                     task_id,
                     chunk_id,
-                    raw_response,
                     "field_missing",
                     key,
                 )
@@ -355,10 +383,9 @@ class ClassifyBatchUseCase:
                 expected_type,
             ):
                 logger.error(
-                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s expected_type=%s actual_type=%s",
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s expected_type=%s actual_type=%s",
                     task_id,
                     chunk_id,
-                    raw_response,
                     "invalid_field_type",
                     key,
                     expected_type.__name__,
@@ -379,10 +406,9 @@ class ClassifyBatchUseCase:
             for item in raw_response[key]:
                 if not isinstance(item, dict):
                     logger.error(
-                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s",
                         task_id,
                         chunk_id,
-                        raw_response,
                         "array_item_not_object",
                         key,
                     )
@@ -398,10 +424,9 @@ class ClassifyBatchUseCase:
                 and not isinstance(information_type, str)
             ):
                 logger.error(
-                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                    "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s",
                     task_id,
                     chunk_id,
-                    raw_response,
                     "invalid_field_type",
                     "information.information_type",
                 )
@@ -419,10 +444,9 @@ class ClassifyBatchUseCase:
                     continue
                 if not isinstance(refs, list):
                     logger.error(
-                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s",
                         task_id,
                         chunk_id,
-                        raw_response,
                         "invalid_field_type",
                         f"information.{ref_field}",
                     )
@@ -433,10 +457,9 @@ class ClassifyBatchUseCase:
                 for ref in refs:
                     if not isinstance(ref, str):
                         logger.error(
-                            "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s field=%s",
+                            "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s reason=%s field=%s",
                             task_id,
                             chunk_id,
-                            raw_response,
                             "array_item_not_string",
                             f"information.{ref_field}",
                         )
@@ -455,10 +478,9 @@ class ClassifyBatchUseCase:
 
         if raw_response is None:
             logger.error(
-                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                "classification sensitivity_missing task_id=%s chunk_id=%s reason=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "raw_response_missing",
             )
             raise ValueError(
@@ -467,10 +489,9 @@ class ClassifyBatchUseCase:
 
         if "sensitivity" not in raw_response:
             logger.error(
-                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                "classification sensitivity_missing task_id=%s chunk_id=%s reason=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "field_missing",
             )
             raise ValueError(
@@ -480,10 +501,9 @@ class ClassifyBatchUseCase:
         sensitivity = raw_response["sensitivity"]
         if not isinstance(sensitivity, dict):
             logger.error(
-                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s reason=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "sensitivity_not_object",
             )
             raise ValueError(
@@ -492,10 +512,9 @@ class ClassifyBatchUseCase:
 
         if "level" not in sensitivity:
             logger.error(
-                "classification sensitivity_missing task_id=%s chunk_id=%s raw_response=%s reason=%s",
+                "classification sensitivity_missing task_id=%s chunk_id=%s reason=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "level_missing",
             )
             raise ValueError(
@@ -505,10 +524,9 @@ class ClassifyBatchUseCase:
         level = sensitivity["level"]
         if isinstance(level, bool) or not isinstance(level, int):
             logger.error(
-                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s level=%s",
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s reason=%s level=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "level_not_integer",
                 level,
             )
@@ -518,10 +536,9 @@ class ClassifyBatchUseCase:
 
         if level < 1:
             logger.error(
-                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s level=%s",
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s reason=%s level=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "level_out_of_range",
                 level,
             )
@@ -532,10 +549,9 @@ class ClassifyBatchUseCase:
         description = sensitivity.get("description")
         if not isinstance(description, str):
             logger.error(
-                "classification sensitivity_parse_failed task_id=%s chunk_id=%s raw_response=%s reason=%s description=%s",
+                "classification sensitivity_parse_failed task_id=%s chunk_id=%s reason=%s description=%s",
                 task_id,
                 chunk_id,
-                raw_response,
                 "description_not_string",
                 description,
             )

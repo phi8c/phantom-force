@@ -2,6 +2,15 @@ from module.ingest.classification.application.services.classification_task_sched
     ClassificationTaskSchedulingResult,
     ClassificationTaskSchedulingService,
 )
+from module.ingest.classification.application.dtos.document_context import (
+    DocumentContext,
+    DocumentContextDocumentType,
+    DocumentContextHead,
+    DocumentContextTopic,
+)
+from module.ingest.classification.application.services.document_structure_analyzer import (
+    DocumentStructureAnalyzer,
+)
 from module.ingest.classification.domain.contracts.batch_finalizer import (
     BatchFinalizer,
     BatchFinalizationSignal,
@@ -19,9 +28,13 @@ from module.ingest.classification.domain.contracts.classification_dispatcher imp
 from module.ingest.classification.domain.contracts.classification_task_repository import (
     ClassificationTaskRepository,
 )
+from module.ingest.classification.domain.contracts.document_structure_analyzer import (
+    DocumentStructureAnalyzer as DocumentStructureAnalyzerContract,
+)
 from module.ingest.classification.composition.factory import (
     create_classify_batch_use_case,
     create_classify_batch_use_case_scope,
+    create_document_structure_analyzer,
 )
 
 
@@ -35,6 +48,13 @@ __all__ = [
     "ClassificationTaskRepository",
     "ClassificationTaskSchedulingResult",
     "ClassificationTaskSchedulingService",
+    "DocumentContext",
+    "DocumentContextDocumentType",
+    "DocumentContextHead",
+    "DocumentContextTopic",
+    "DocumentStructureAnalyzer",
+    "DocumentStructureAnalyzerContract",
     "create_classify_batch_use_case",
     "create_classify_batch_use_case_scope",
+    "create_document_structure_analyzer",
 ]

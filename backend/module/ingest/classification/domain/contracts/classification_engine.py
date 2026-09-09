@@ -7,6 +7,9 @@ from uuid import UUID
 from module.ingest.classification.domain.contracts.chunk_reader import (
     ChunkForClassification,
 )
+from module.ingest.classification.domain.entities.document_context import (
+    DocumentContext,
+)
 
 
 @dataclass(frozen=True)
@@ -22,5 +25,6 @@ class ClassificationEngine(ABC):
     async def classify_batch(
         self,
         chunks: list[ChunkForClassification],
+        document_context: DocumentContext,
     ) -> list[ClassificationResult]:
         pass

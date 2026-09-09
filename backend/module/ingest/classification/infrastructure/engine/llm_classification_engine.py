@@ -13,6 +13,9 @@ from module.ingest.classification.domain.contracts.classification_engine import 
     ClassificationEngine,
     ClassificationResult,
 )
+from module.ingest.classification.domain.entities.document_context import (
+    DocumentContext,
+)
 from module.prompt.composition import (
     PromptProvider,
 )
@@ -56,6 +59,7 @@ class LLMClassificationEngine(
     async def classify_batch(
         self,
         chunks: list[ChunkForClassification],
+        document_context: DocumentContext,
     ) -> list[ClassificationResult]:
 
         if not chunks:
@@ -97,17 +101,18 @@ class LLMClassificationEngine(
                 ),
                 system_prompt=prompt.system_prompt,
                 user_prompt=self._build_user_prompt(
-                    chunk,
+                    chunk=chunk,
+                    document_context=document_context,
                 ),
                 response_format=response_format,
                 config=config,
             )
 
             logger.info(
-                "classification llm_response chunk_id=%s model=%s response=%s",
+                "classification llm_response chunk_id=%s model=%s finish_reason=%s",
                 chunk.id,
                 llm_result.model_code,
-                llm_result.content,
+                llm_result.finish_reason,
             )
 
             raw_response = self._parse_json_response(
@@ -127,11 +132,19 @@ class LLMClassificationEngine(
 
     @staticmethod
     def _build_user_prompt(
+        *,
         chunk: ChunkForClassification,
+        document_context: DocumentContext,
     ) -> str:
 
         return json.dumps(
             {
+                "document_context": (
+                    LLMClassificationEngine
+                    ._document_context_payload(
+                        document_context,
+                    )
+                ),
                 "chunk_id": str(chunk.id),
                 "content": chunk.content,
                 "metadata": chunk.metadata,
@@ -140,7 +153,6 @@ class LLMClassificationEngine(
                         "level": "integer >= 1",
                         "description": "string",
                     },
-                    "document_type": "object",
                     "objects": "array",
                     "information_types": "array",
                     "information_fields": "array",
@@ -164,6 +176,38 @@ class LLMClassificationEngine(
             },
             ensure_ascii=False,
         )
+
+    @staticmethod
+    def _document_context_payload(
+        document_context: DocumentContext,
+    ) -> dict[str, Any]:
+
+        return {
+            "document_type": {
+                "code": document_context.document_type.code,
+                "name": document_context.document_type.name,
+                "description": (
+                    document_context.document_type.description
+                ),
+                "metadata": document_context.document_type.metadata,
+            },
+            "topics": [
+                {
+                    "code": topic.code,
+                    "name": topic.name,
+                    "description": topic.description,
+                    "metadata": topic.metadata,
+                }
+                for topic in document_context.topics
+            ],
+            "head": {
+                "type": document_context.head.type,
+                "code": document_context.head.code,
+                "name": document_context.head.name,
+                "description": document_context.head.description,
+                "metadata": document_context.head.metadata,
+            },
+        }
 
     @staticmethod
     def _response_format_from_config(
@@ -247,7 +291,12 @@ class LLMClassificationEngine(
         return {
             "level",
             "description",
-        } <= set(sensitivity_properties)
+        } <= set(sensitivity_properties) and (
+            "document_type" not in properties
+        ) and (
+            "document_type"
+            not in set(schema.get("required", []))
+        )
 
     @staticmethod
     def _parse_json_response(
@@ -257,9 +306,8 @@ class LLMClassificationEngine(
 
         if not content:
             logger.error(
-                "classification response_parse_failed chunk_id=%s raw_response=%s reason=%s",
+                "classification response_parse_failed chunk_id=%s reason=%s",
                 chunk_id,
-                content,
                 "empty_response",
             )
             raise ValueError(
@@ -272,9 +320,8 @@ class LLMClassificationEngine(
             )
         except json.JSONDecodeError as exc:
             logger.exception(
-                "classification response_parse_failed chunk_id=%s raw_response=%s reason=%s",
+                "classification response_parse_failed chunk_id=%s reason=%s",
                 chunk_id,
-                content,
                 "json_decode_error",
             )
             raise ValueError(
@@ -293,9 +340,8 @@ class LLMClassificationEngine(
             dict,
         ):
             logger.error(
-                "classification response_parse_failed chunk_id=%s raw_response=%s reason=%s parsed_type=%s",
+                "classification response_parse_failed chunk_id=%s reason=%s parsed_type=%s",
                 chunk_id,
-                content,
                 "non_object_json",
                 type(parsed).__name__,
             )

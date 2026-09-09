@@ -236,10 +236,13 @@ def create_embedding_worker(
 def create_classification_worker(
     *,
     queues: IngestQueueClients,
+    file_storage,
 ) -> ClassificationWorker:
 
     return ClassificationWorker(
         queue_client=queues.classification,
         claim_scope_factory=_classification_claim_scope,
-        use_case_factory=classification_use_case_scope,
+        use_case_factory=lambda: classification_use_case_scope(
+            file_storage=file_storage,
+        ),
     )

@@ -361,7 +361,10 @@ def embedding_use_case_scope():
     return scope()
 
 
-def classification_use_case_scope():
+def classification_use_case_scope(
+    *,
+    file_storage,
+):
 
     @asynccontextmanager
     async def scope():
@@ -376,6 +379,16 @@ def classification_use_case_scope():
                     chunk_query=DocumentChunkQuery(
                         session=session,
                     ),
+                ),
+                extracted_asset_reader=(
+                    StorageExtractedAssetReader(
+                        extracted_asset_query=(
+                            ExtractedAssetQuery(
+                                session=session,
+                            )
+                        ),
+                        file_storage=file_storage,
+                    )
                 ),
                 batch_finalizer=ClassificationBatchFinalizer(
                     completion_service=completion_service,

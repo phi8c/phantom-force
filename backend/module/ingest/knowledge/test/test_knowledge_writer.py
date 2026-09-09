@@ -1,5 +1,6 @@
 from uuid import uuid4
 from pathlib import Path
+from copy import deepcopy
 
 import pytest
 
@@ -20,6 +21,11 @@ from module.ingest.knowledge.application.dtos import (
 )
 from module.ingest.knowledge.application.services.knowledge_writer import (
     KnowledgeWriter,
+)
+from module.ingest.classification.composition import (
+    DocumentContext,
+    DocumentContextDocumentType,
+    DocumentContextTopic,
 )
 
 
@@ -208,6 +214,68 @@ async def test_malformed_response_contract_fails_clearly():
 
 
 @pytest.mark.asyncio
+async def test_document_context_supplies_document_type_for_chunk_response():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    assert (
+        "space",
+        "technical_document",
+    ) in repo.document_types
+    assert repo.information[0].metadata[
+        "document_type_codes"
+    ] == ["technical_document"]
+
+
+@pytest.mark.asyncio
+async def test_document_context_topics_are_merged_into_information_refs():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    topic_codes = [
+        topic["code"]
+        for topic in repo.information[0].topic_refs
+    ]
+    assert topic_codes == [
+        "railway_safety",
+        "technical_maintenance",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_document_context_merge_does_not_mutate_input_response():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+    original = deepcopy(raw)
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    assert raw == original
+
+
+@pytest.mark.asyncio
 async def test_classification_passes_knowledge_space_id_to_write_request():
     task = ClassificationTask(
         id=uuid4(),
@@ -228,6 +296,7 @@ async def test_classification_passes_knowledge_space_id_to_write_request():
     use_case = ClassifyBatchUseCase(
         task_repository=FakeTaskRepository(task),
         chunk_reader=FakeChunkReader(),
+        document_structure_analyzer=FakeDocumentStructureAnalyzer(),
         classification_engine=FakeClassificationEngine(),
         classification_repository=classification_repository,
         batch_finalizer=SuccessfulBatchFinalizer(),
@@ -239,6 +308,7 @@ async def test_classification_passes_knowledge_space_id_to_write_request():
     await use_case.execute(task.id)
 
     assert writer.requests[0].knowledge_space_id == "space"
+    assert writer.requests[0].document_context is not None
     assert classification_repository.classifications[0].label == "2"
     assert classification_repository.classifications[0].confidence is None
 
@@ -263,6 +333,7 @@ async def test_transaction_rollback_when_knowledge_persistence_fails():
     use_case = ClassifyBatchUseCase(
         task_repository=FakeTaskRepository(task),
         chunk_reader=FakeChunkReader(),
+        document_structure_analyzer=FakeDocumentStructureAnalyzer(),
         classification_engine=FakeClassificationEngine(),
         classification_repository=FakeClassificationRepository(),
         batch_finalizer=FakeBatchFinalizer(),
@@ -277,13 +348,29 @@ async def test_transaction_rollback_when_knowledge_persistence_fails():
     assert uow.rolled_back is True
 
 
-def request(raw_response):
+def request(raw_response, document_context=None):
     return KnowledgeWriteRequest(
         knowledge_space_id="space",
         document_id=uuid4(),
         chunk_id=uuid4(),
         model_name="gpt-test",
         raw_response=raw_response,
+        document_context=document_context,
+    )
+
+
+def sample_document_context():
+    return DocumentContext(
+        document_type=DocumentContextDocumentType(
+            code="technical_document",
+            name="Technical document",
+        ),
+        topics=[
+            DocumentContextTopic(
+                code="technical_maintenance",
+                name="Technical maintenance",
+            ),
+        ],
     )
 
 
@@ -416,7 +503,7 @@ class FakeChunkReader:
 
 
 class FakeClassificationEngine:
-    async def classify_batch(self, chunks):
+    async def classify_batch(self, chunks, document_context):
         return [
             ClassificationResult(
                 chunk_id=uuid4(),
@@ -424,6 +511,20 @@ class FakeClassificationEngine:
                 raw_response=sample_response(),
             )
         ]
+
+
+class FakeDocumentStructureAnalyzer:
+    async def analyze(self, *, ingestion_job_id, document_id):
+        from module.ingest.classification.composition import (
+            DocumentContext,
+            DocumentContextDocumentType,
+        )
+
+        return DocumentContext(
+            document_type=DocumentContextDocumentType(
+                code="technical_document",
+            ),
+        )
 
 
 class FakeClassificationRepository:

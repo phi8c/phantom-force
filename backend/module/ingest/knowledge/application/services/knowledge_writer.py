@@ -1,5 +1,6 @@
-from typing import Any
 import logging
+from copy import deepcopy
+from typing import Any
 
 from module.ingest.knowledge.application.dtos.knowledge_write_request import (
     KnowledgeWriteRequest,
@@ -37,7 +38,14 @@ class KnowledgeWriter:
     ) -> None:
 
         raw_response = self._validate_response(
-            dict(request.raw_response or {}),
+            deepcopy(request.raw_response or {}),
+            has_document_context=(
+                request.document_context is not None
+            ),
+        )
+        raw_response = self._with_document_context(
+            raw_response,
+            request.document_context,
         )
         knowledge_space_id = request.knowledge_space_id
         information_written = 0
@@ -313,11 +321,12 @@ class KnowledgeWriter:
     @staticmethod
     def _validate_response(
         raw_response: dict[str, Any],
+        *,
+        has_document_context: bool = False,
     ) -> dict[str, Any]:
 
         required_types = {
             "sensitivity": dict,
-            "document_type": dict,
             "objects": list,
             "information_types": list,
             "information_fields": list,
@@ -338,6 +347,17 @@ class KnowledgeWriter:
                     "Knowledge response field "
                     f"{key} must be {expected_type.__name__}",
                 )
+
+        document_type = raw_response.get("document_type")
+        if document_type is None:
+            if not has_document_context:
+                raise ValueError(
+                    "Knowledge response missing document_type",
+                )
+        elif not isinstance(document_type, dict):
+            raise ValueError(
+                "Knowledge response field document_type must be dict",
+            )
 
         sensitivity = raw_response["sensitivity"]
         level = sensitivity.get("level")
@@ -398,6 +418,145 @@ class KnowledgeWriter:
                         )
 
         return raw_response
+
+    @classmethod
+    def _with_document_context(
+        cls,
+        raw_response: dict[str, Any],
+        document_context,
+    ) -> dict[str, Any]:
+
+        if document_context is None:
+            return raw_response
+
+        raw_response["document_type"] = (
+            cls._document_type_from_context(
+                document_context,
+            )
+        )
+        raw_response["topics"] = cls._merged_topics(
+            cls._topics_from_context(
+                document_context,
+            ),
+            raw_response.get("topics") or [],
+        )
+        cls._merge_document_topic_refs(
+            raw_response,
+            document_context,
+        )
+        raw_response["document_context"] = (
+            cls._document_context_metadata(
+                document_context,
+            )
+        )
+
+        return raw_response
+
+    @staticmethod
+    def _merge_document_topic_refs(
+        raw_response: dict[str, Any],
+        document_context,
+    ) -> None:
+
+        document_topic_codes = [
+            str(topic.code)
+            for topic in document_context.topics
+            if topic.code
+        ]
+        if not document_topic_codes:
+            return
+
+        for item in raw_response["information"]:
+            topic_refs = item.get("topic_refs")
+            if topic_refs is None:
+                topic_refs = []
+            if not isinstance(topic_refs, list):
+                raise ValueError(
+                    "information.topic_refs must be a list",
+                )
+
+            merged = []
+            seen = set()
+            for code in [
+                *topic_refs,
+                *document_topic_codes,
+            ]:
+                if not isinstance(code, str):
+                    raise ValueError(
+                        "information.topic_refs item must be a string",
+                    )
+                if code in seen:
+                    continue
+                seen.add(code)
+                merged.append(code)
+            item["topic_refs"] = merged
+
+    @staticmethod
+    def _document_type_from_context(
+        document_context,
+    ) -> dict[str, Any]:
+
+        document_type = document_context.document_type
+        return {
+            "code": document_type.code,
+            "name": document_type.name,
+            "description": document_type.description,
+            "metadata": document_type.metadata,
+        }
+
+    @staticmethod
+    def _topics_from_context(
+        document_context,
+    ) -> list[dict[str, Any]]:
+
+        return [
+            {
+                "code": topic.code,
+                "name": topic.name,
+                "description": topic.description,
+                "metadata": topic.metadata,
+            }
+            for topic in document_context.topics
+        ]
+
+    @classmethod
+    def _document_context_metadata(
+        cls,
+        document_context,
+    ) -> dict[str, Any]:
+
+        return {
+            "document_type": cls._document_type_from_context(
+                document_context,
+            ),
+            "topics": cls._topics_from_context(
+                document_context,
+            ),
+            "head": {
+                "type": document_context.head.type,
+                "code": document_context.head.code,
+                "name": document_context.head.name,
+                "description": document_context.head.description,
+                "metadata": document_context.head.metadata,
+            },
+        }
+
+    @staticmethod
+    def _merged_topics(
+        document_topics: list[dict[str, Any]],
+        local_topics: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+
+        merged: dict[str, dict[str, Any]] = {}
+        for topic in [
+            *document_topics,
+            *local_topics,
+        ]:
+            code = topic.get("code")
+            if not code:
+                continue
+            merged[str(code)] = topic
+        return list(merged.values())
 
     @classmethod
     def _object_refs(

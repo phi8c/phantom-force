@@ -18,6 +18,9 @@ from module.ingest.classification.domain.contracts.classification_engine import 
     ClassificationEngine,
     ClassificationResult,
 )
+from module.ingest.classification.domain.entities.document_context import (
+    DocumentContext,
+)
 
 
 class RuleBasedLegacyClassificationEngine(
@@ -63,6 +66,7 @@ class LegacyClassificationEngineAdapter(
     async def classify_batch(
         self,
         chunks: list[ChunkForClassification],
+        document_context: DocumentContext,
     ) -> list[ClassificationResult]:
 
         legacy_chunks = [

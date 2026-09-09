@@ -10,3 +10,4 @@ class KnowledgeWriteRequest:
     chunk_id: UUID
     model_name: str
     raw_response: dict[str, Any]
+    document_context: Any | None = None
