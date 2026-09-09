@@ -1,3 +1,14 @@
+from module.ingest.knowledge.application.dtos.knowledge_discovery import (
+    KnowledgeCodeStructure,
+    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveryRequest,
+    KnowledgeDiscoveryResult,
+    KnowledgeDiscoverySeed,
+    KnowledgeMatchedEntryPoints,
+    KnowledgeObjectStructure,
+    KnowledgeRetrievalRequest,
+    KnowledgeRetrievalSelection,
+)
 from module.ingest.knowledge.application.dtos.knowledge_search_request import (
     KnowledgeSearchRequest,
 )
@@ -20,7 +31,16 @@ from module.ingest.knowledge.composition.factory import (
 )
 
 __all__ = [
+    "KnowledgeCodeStructure",
+    "KnowledgeDiscoveredSeed",
+    "KnowledgeDiscoveryRequest",
+    "KnowledgeDiscoveryResult",
+    "KnowledgeDiscoverySeed",
+    "KnowledgeMatchedEntryPoints",
     "KnowledgeReader",
+    "KnowledgeObjectStructure",
+    "KnowledgeRetrievalRequest",
+    "KnowledgeRetrievalSelection",
     "KnowledgeSearchItem",
     "KnowledgeSearchRequest",
     "KnowledgeSearchResult",

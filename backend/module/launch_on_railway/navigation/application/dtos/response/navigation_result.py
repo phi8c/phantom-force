@@ -6,7 +6,10 @@ from typing import Any
 class NavigationItem:
     information_id: str
     summary: str
+    information_type_code: str | None = None
     data: dict[str, Any] | None = None
+    object_refs: list[dict[str, Any]] = field(default_factory=list)
+    topic_refs: list[dict[str, Any]] = field(default_factory=list)
     source_refs: list[dict[str, Any]] = field(default_factory=list)
     confidence: float | None = None
 

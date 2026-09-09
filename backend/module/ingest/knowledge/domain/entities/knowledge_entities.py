@@ -97,3 +97,38 @@ class KnowledgeInformationSearchRecord:
     topic_refs: list[dict[str, Any]] | None
     source_refs: list[dict[str, Any]] | None
     confidence: float | None
+
+
+@dataclass
+class KnowledgeObjectStructureRecord:
+    object_code: str
+    identifier_code: str | None
+    name: str | None
+    identifier_name: str | None
+    description: str | None
+
+
+@dataclass
+class KnowledgeCodeStructureRecord:
+    code: str
+    name: str | None
+    description: str | None
+    data_type: str | None = None
+
+
+@dataclass
+class KnowledgeMatchedEntryPointsRecord:
+    objects: list[KnowledgeObjectStructureRecord]
+    information_types: list[KnowledgeCodeStructureRecord]
+    topics: list[KnowledgeCodeStructureRecord]
+
+
+@dataclass
+class KnowledgeDiscoveredSeedRecord:
+    seed_id: str
+    matched_entry_points: KnowledgeMatchedEntryPointsRecord
+    available_objects: list[KnowledgeObjectStructureRecord]
+    available_information_types: list[KnowledgeCodeStructureRecord]
+    available_topics: list[KnowledgeCodeStructureRecord]
+    available_fields: list[KnowledgeCodeStructureRecord]
+    constraints: dict[str, Any]

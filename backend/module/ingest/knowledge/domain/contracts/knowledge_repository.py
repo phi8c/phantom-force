@@ -5,6 +5,7 @@ from uuid import UUID
 
 from module.ingest.knowledge.domain.entities import (
     KnowledgeDocumentType,
+    KnowledgeDiscoveredSeedRecord,
     KnowledgeInformation,
     KnowledgeInformationField,
     KnowledgeInformationSearchRecord,
@@ -68,5 +69,26 @@ class KnowledgeRepository(ABC):
         identifier_code: str | None,
         information_type_code: str | None,
         topic_codes: list[str],
+    ) -> list[KnowledgeInformationSearchRecord]:
+        pass
+
+    @abstractmethod
+    async def discover(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        seeds: list[dict[str, Any]],
+    ) -> list[KnowledgeDiscoveredSeedRecord]:
+        pass
+
+    @abstractmethod
+    async def retrieve_for_selection(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        discovered_seed: KnowledgeDiscoveredSeedRecord,
+        information_type_codes: list[str],
+        topic_codes: list[str],
+        field_codes: list[str],
     ) -> list[KnowledgeInformationSearchRecord]:
         pass

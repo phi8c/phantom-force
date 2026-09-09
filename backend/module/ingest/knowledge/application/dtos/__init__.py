@@ -10,8 +10,28 @@ from module.ingest.knowledge.application.dtos.knowledge_write_request import (
 )
 
 __all__ = [
+    "KnowledgeCodeStructure",
+    "KnowledgeDiscoveredSeed",
+    "KnowledgeDiscoveryRequest",
+    "KnowledgeDiscoveryResult",
+    "KnowledgeDiscoverySeed",
+    "KnowledgeMatchedEntryPoints",
+    "KnowledgeObjectStructure",
+    "KnowledgeRetrievalRequest",
+    "KnowledgeRetrievalSelection",
     "KnowledgeSearchItem",
     "KnowledgeSearchRequest",
     "KnowledgeSearchResult",
     "KnowledgeWriteRequest",
 ]
+from module.ingest.knowledge.application.dtos.knowledge_discovery import (
+    KnowledgeCodeStructure,
+    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveryRequest,
+    KnowledgeDiscoveryResult,
+    KnowledgeDiscoverySeed,
+    KnowledgeMatchedEntryPoints,
+    KnowledgeObjectStructure,
+    KnowledgeRetrievalRequest,
+    KnowledgeRetrievalSelection,
+)

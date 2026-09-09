@@ -1,4 +1,5 @@
 import json
+import logging
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -15,6 +16,10 @@ from module.launch_on_railway.query_analysis.application.enums.query_analysis_en
     QueryAnalysisPromptCode,
     QueryAnalysisProviderCode,
 )
+
+
+logger = logging.getLogger(__name__)
+MAX_QUERY_SEEDS = 15
 
 
 class QueryAnalyzer:
@@ -69,11 +74,33 @@ class QueryAnalyzer:
                 "Query analysis response must be a JSON object"
             )
 
+        seeds = self._parse_seeds(
+            result.get("seeds", []),
+        )
+
+        logger.info(
+            "[QUERY_ANALYSIS] question=%s intent=%s candidate_seed_count=%s candidate_seeds=%s",
+            request.question,
+            result.get("intent", ""),
+            len(seeds),
+            [
+                {
+                    "object_code": seed.object_code,
+                    "identifier_code": seed.identifier_code,
+                    "information_type_code": (
+                        seed.information_type_code
+                    ),
+                    "topic_codes": seed.topic_codes,
+                    "constraints": seed.constraints,
+                    "confidence": seed.confidence,
+                }
+                for seed in seeds
+            ],
+        )
+
         return QueryAnalysisResult(
             intent=result.get("intent", ""),
-            seeds=self._parse_seeds(
-                result.get("seeds", []),
-            ),
+            seeds=seeds,
             raw_response=result,
         )
 
@@ -88,10 +115,6 @@ class QueryAnalyzer:
         seeds: list[QuerySeed] = []
         for raw_seed in raw_seeds:
             if not isinstance(raw_seed, dict):
-                continue
-
-            object_code = raw_seed.get("object_code")
-            if not object_code:
                 continue
 
             topic_codes = raw_seed.get("topic_codes", [])
@@ -109,30 +132,42 @@ class QueryAnalyzer:
                 except (TypeError, ValueError):
                     confidence = None
 
+            object_code = QueryAnalyzer._optional_str(
+                raw_seed.get("object_code"),
+            )
+            information_type_code = QueryAnalyzer._optional_str(
+                raw_seed.get("information_type_code"),
+            )
+            topic_codes = [
+                str(topic_code)
+                for topic_code in topic_codes
+                if topic_code is not None
+            ]
+
+            if (
+                object_code is None
+                and information_type_code is None
+                and not topic_codes
+            ):
+                continue
+            identifier_code = QueryAnalyzer._optional_str(
+                raw_seed.get("identifier_code"),
+            )
+            if object_code is None:
+                identifier_code = None
+
             seeds.append(
                 QuerySeed(
-                    object_code=str(object_code),
-                    identifier_code=(
-                        QueryAnalyzer._optional_str(
-                            raw_seed.get("identifier_code"),
-                        )
-                    ),
-                    information_type_code=(
-                        QueryAnalyzer._optional_str(
-                            raw_seed.get("information_type_code"),
-                        )
-                    ),
-                    topic_codes=[
-                        str(topic_code)
-                        for topic_code in topic_codes
-                        if topic_code is not None
-                    ],
+                    object_code=object_code,
+                    identifier_code=identifier_code,
+                    information_type_code=information_type_code,
+                    topic_codes=topic_codes,
                     constraints=constraints,
                     confidence=confidence,
                 )
             )
 
-        return seeds
+        return seeds[:MAX_QUERY_SEEDS]
 
     @staticmethod
     def _optional_str(
@@ -156,13 +191,14 @@ class QueryAnalyzer:
                     "seeds": {
                         "type": "array",
                         "item": {
-                            "object_code": "string",
+                            "object_code": "string or null",
                             "identifier_code": "string or null",
                             "information_type_code": "string or null",
                             "topic_codes": "array of strings",
                             "constraints": "object",
                             "confidence": "number from 0 to 1 or null",
                         },
+                        "max_items": MAX_QUERY_SEEDS,
                     },
                 },
             },

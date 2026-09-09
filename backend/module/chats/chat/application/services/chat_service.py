@@ -1,4 +1,5 @@
 import json
+import logging
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -22,6 +23,9 @@ from module.chats.chat.application.enums.chat_enums import (
     ChatPromptCode,
     ChatProviderCode,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -53,6 +57,7 @@ class ChatService:
         # 2. Navigate structured knowledge
         navigation = await self._navigation_service.navigate(
             knowledge_space_id=request.knowledge_space_id,
+            question=request.question,
             analysis=analysis,
         )
 
@@ -71,6 +76,11 @@ class ChatService:
         response_format = config.pop(
             "response_format",
             None,
+        )
+
+        logger.info(
+            "[ANSWER_GENERATION] information_count=%s",
+            len(navigation.items),
         )
 
         # 4. Generate final answer
@@ -111,8 +121,13 @@ class ChatService:
             information=[
                 {
                     "information_id": item.information_id,
+                    "information_type_code": (
+                        item.information_type_code
+                    ),
                     "summary": item.summary,
                     "data": item.data,
+                    "object_refs": item.object_refs,
+                    "topic_refs": item.topic_refs,
                     "source_refs": item.source_refs,
                     "confidence": item.confidence,
                 }
@@ -133,8 +148,13 @@ class ChatService:
                 "information": [
                     {
                         "information_id": item.information_id,
+                        "information_type_code": (
+                            item.information_type_code
+                        ),
                         "summary": item.summary,
                         "data": item.data,
+                        "object_refs": item.object_refs,
+                        "topic_refs": item.topic_refs,
                         "source_refs": item.source_refs,
                         "confidence": item.confidence,
                     }
