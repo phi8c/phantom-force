@@ -139,13 +139,10 @@ class ClassifyBatchUseCase:
                 )
             )
             logger.info(
-                "classification document_context_done task_id=%s document_type=%s topics=%s",
+                "classification document_context_done task_id=%s document_type=%s topic=%s",
                 task_id,
                 document_context.document_type.code,
-                [
-                    topic.code
-                    for topic in document_context.topics
-                ],
+                document_context.topic.code,
             )
 
             logger.info(
@@ -370,7 +367,6 @@ class ClassifyBatchUseCase:
             "objects": list,
             "information_types": list,
             "information_fields": list,
-            "topics": list,
             "information": list,
         }
 
@@ -408,7 +404,6 @@ class ClassifyBatchUseCase:
             "objects",
             "information_types",
             "information_fields",
-            "topics",
             "information",
         ):
             for item in raw_response[key]:
@@ -445,7 +440,6 @@ class ClassifyBatchUseCase:
 
             for ref_field in (
                 "object_refs",
-                "topic_refs",
             ):
                 refs = item.get(ref_field)
                 if refs is None:
@@ -620,15 +614,12 @@ class ClassifyBatchUseCase:
                 ),
                 metadata=document_context.document_type.metadata,
             ),
-            topics=[
-                KnowledgeTopicContext(
-                    code=topic.code,
-                    name=topic.name,
-                    description=topic.description,
-                    metadata=topic.metadata,
-                )
-                for topic in document_context.topics
-            ],
+            topic=KnowledgeTopicContext(
+                code=document_context.topic.code,
+                name=document_context.topic.name,
+                description=document_context.topic.description,
+                metadata=document_context.topic.metadata,
+            ),
             head=KnowledgeHeadContext(
                 type=document_context.head.type,
                 code=document_context.head.code,

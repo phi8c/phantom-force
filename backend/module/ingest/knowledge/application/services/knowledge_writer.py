@@ -80,7 +80,7 @@ class KnowledgeWriter:
         )
         topics = await self._upsert_topics(
             knowledge_space_id,
-            working_response,
+            request.document_context,
         )
 
         for ordinal, item in enumerate(working_response["information"]):
@@ -126,7 +126,6 @@ class KnowledgeWriter:
                         objects,
                     ),
                     topic_refs=self._topic_refs(
-                        item,
                         topics,
                     ),
                     source_refs=[
@@ -296,29 +295,34 @@ class KnowledgeWriter:
     async def _upsert_topics(
         self,
         knowledge_space_id,
-        raw_response: dict[str, Any],
+        document_context,
     ):
 
         result = {}
-        for item in raw_response["topics"]:
-            code = item.get("code")
-            if not code:
-                raise ValueError(
-                    "topics item missing code",
-                )
-            entity = await self._repository.upsert_topic(
-                KnowledgeTopic(
-                    id=None,
-                    knowledge_space_id=knowledge_space_id,
-                    code=str(code),
-                    name=item.get("name"),
-                    description=item.get("description"),
-                    metadata=item.get("metadata"),
-                    created_at=None,
-                    updated_at=None,
-                )
+        if document_context is None:
+            return result
+
+        item = self._topic_from_context(
+            document_context,
+        )
+        code = item.get("code")
+        if not code:
+            raise ValueError(
+                "document context topic missing code",
             )
-            result[entity.code] = entity
+        entity = await self._repository.upsert_topic(
+            KnowledgeTopic(
+                id=None,
+                knowledge_space_id=knowledge_space_id,
+                code=str(code),
+                name=item.get("name"),
+                description=item.get("description"),
+                metadata=item.get("metadata"),
+                created_at=None,
+                updated_at=None,
+            )
+        )
+        result[entity.code] = entity
         return result
 
     @staticmethod
@@ -333,7 +337,6 @@ class KnowledgeWriter:
             "objects": list,
             "information_types": list,
             "information_fields": list,
-            "topics": list,
             "information": list,
         }
 
@@ -384,7 +387,6 @@ class KnowledgeWriter:
             "objects",
             "information_types",
             "information_fields",
-            "topics",
             "information",
         ):
             for item in raw_response[key]:
@@ -405,7 +407,6 @@ class KnowledgeWriter:
 
             for ref_field in (
                 "object_refs",
-                "topic_refs",
             ):
                 refs = item.get(ref_field)
                 if refs is None:
@@ -437,16 +438,6 @@ class KnowledgeWriter:
                 document_context,
             )
         )
-        raw_response["topics"] = cls._merged_topics(
-            cls._topics_from_context(
-                document_context,
-            ),
-            raw_response.get("topics") or [],
-        )
-        cls._merge_document_topic_refs(
-            raw_response,
-            document_context,
-        )
         raw_response["document_context"] = (
             cls._document_context_metadata(
                 document_context,
@@ -454,45 +445,6 @@ class KnowledgeWriter:
         )
 
         return raw_response
-
-    @staticmethod
-    def _merge_document_topic_refs(
-        raw_response: dict[str, Any],
-        document_context,
-    ) -> None:
-
-        document_topic_codes = [
-            str(topic.code)
-            for topic in document_context.topics
-            if topic.code
-        ]
-        if not document_topic_codes:
-            return
-
-        for item in raw_response["information"]:
-            topic_refs = item.get("topic_refs")
-            if topic_refs is None:
-                topic_refs = []
-            if not isinstance(topic_refs, list):
-                raise ValueError(
-                    "information.topic_refs must be a list",
-                )
-
-            merged = []
-            seen = set()
-            for code in [
-                *topic_refs,
-                *document_topic_codes,
-            ]:
-                if not isinstance(code, str):
-                    raise ValueError(
-                        "information.topic_refs item must be a string",
-                    )
-                if code in seen:
-                    continue
-                seen.add(code)
-                merged.append(code)
-            item["topic_refs"] = merged
 
     @staticmethod
     def _document_type_from_context(
@@ -508,19 +460,17 @@ class KnowledgeWriter:
         }
 
     @staticmethod
-    def _topics_from_context(
+    def _topic_from_context(
         document_context,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
 
-        return [
-            {
-                "code": topic.code,
-                "name": topic.name,
-                "description": topic.description,
-                "metadata": topic.metadata,
-            }
-            for topic in document_context.topics
-        ]
+        topic = document_context.topic
+        return {
+            "code": topic.code,
+            "name": topic.name,
+            "description": topic.description,
+            "metadata": topic.metadata,
+        }
 
     @classmethod
     def _document_context_metadata(
@@ -532,7 +482,7 @@ class KnowledgeWriter:
             "document_type": cls._document_type_from_context(
                 document_context,
             ),
-            "topics": cls._topics_from_context(
+            "topic": cls._topic_from_context(
                 document_context,
             ),
             "head": {
@@ -543,23 +493,6 @@ class KnowledgeWriter:
                 "metadata": document_context.head.metadata,
             },
         }
-
-    @staticmethod
-    def _merged_topics(
-        document_topics: list[dict[str, Any]],
-        local_topics: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-
-        merged: dict[str, dict[str, Any]] = {}
-        for topic in [
-            *local_topics,
-            *document_topics,
-        ]:
-            code = topic.get("code")
-            if not code:
-                continue
-            merged[str(code)] = topic
-        return list(merged.values())
 
     @classmethod
     def _object_refs(
@@ -597,34 +530,19 @@ class KnowledgeWriter:
 
     @staticmethod
     def _topic_refs(
-        item: dict[str, Any],
         topics,
     ) -> list[dict[str, Any]] | None:
 
-        refs = []
-        topic_values = item.get("topic_refs")
-        if topic_values is None:
+        if not topics:
             return None
-        if not isinstance(topic_values, list):
-            raise ValueError(
-                "information.topic_refs must be a list",
-            )
-        for ref in topic_values:
-            if not isinstance(ref, str):
-                raise ValueError(
-                    "information.topic_refs item must be a string",
-                )
-            topic = topics.get(ref)
-            if topic is None:
-                continue
-            refs.append(
-                {
-                    "topic_id": str(topic.id),
-                    "code": topic.code,
-                    "name": topic.name,
-                }
-            )
-        return refs or None
+        return [
+            {
+                "topic_id": str(topic.id),
+                "code": topic.code,
+                "name": topic.name,
+            }
+            for topic in topics.values()
+        ]
 
     @staticmethod
     def _object_key(

@@ -134,10 +134,15 @@ async def test_field_registry():
 async def test_topic_resolution():
     repo = FakeKnowledgeRepository()
 
-    await KnowledgeWriter(repo).write(request(raw_response=sample_response()))
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=sample_response(),
+            document_context=sample_document_context(),
+        )
+    )
 
     topic_refs = repo.information[0].topic_refs
-    assert topic_refs[0]["code"] == "railway_safety"
+    assert topic_refs[0]["code"] == "technical_maintenance"
     assert "topic_id" in topic_refs[0]
 
 
@@ -187,7 +192,6 @@ async def test_same_chunk_multiple_information_items_are_preserved():
                 }
             },
             "object_refs": ["product_a"],
-            "topic_refs": ["railway_safety"],
             "confidence": 0.8,
         }
     )
@@ -237,7 +241,7 @@ async def test_document_context_supplies_document_type_for_chunk_response():
 
 
 @pytest.mark.asyncio
-async def test_document_context_topics_are_merged_into_information_refs():
+async def test_document_context_topic_is_used_for_information_refs():
     repo = FakeKnowledgeRepository()
     raw = sample_response()
     raw.pop("document_type")
@@ -254,9 +258,21 @@ async def test_document_context_topics_are_merged_into_information_refs():
         for topic in repo.information[0].topic_refs
     ]
     assert topic_codes == [
-        "railway_safety",
         "technical_maintenance",
     ]
+    assert len(repo.topics) == 1
+
+
+def test_chunk_response_does_not_need_topics_or_topic_refs():
+    raw = sample_response()
+    assert "topics" not in raw
+    assert "topic_refs" not in raw["information"][0]
+
+    ClassifyBatchUseCase._validate_response_contract(
+        raw,
+        task_id=uuid4(),
+        chunk_id=uuid4(),
+    )
 
 
 @pytest.mark.asyncio
@@ -293,29 +309,26 @@ async def test_raw_model_output_keeps_original_chunk_llm_output():
     assert repo.information[0].raw_model_output == original
     assert "document_type" not in repo.information[0].raw_model_output
     assert "document_context" not in repo.information[0].raw_model_output
-    assert repo.information[0].raw_model_output["information"][0][
-        "topic_refs"
-    ] == ["railway_safety"]
+    assert "topic_refs" not in (
+        repo.information[0].raw_model_output["information"][0]
+    )
 
 
 @pytest.mark.asyncio
-async def test_document_topic_wins_over_local_topic_with_same_code():
+async def test_chunk_generated_topics_are_not_persisted():
     repo = FakeKnowledgeRepository()
     raw = sample_response()
     raw.pop("document_type")
-    raw["topics"].append(
+    raw["topics"] = [
         {
-            "code": "technical_maintenance",
+            "code": "chunk_generated_topic",
             "name": "Local maintenance",
             "description": "Local description",
             "metadata": {
                 "source": "local",
             },
         }
-    )
-    raw["information"][0]["topic_refs"].append(
-        "technical_maintenance",
-    )
+    ]
 
     await KnowledgeWriter(repo).write(
         request(
@@ -324,6 +337,8 @@ async def test_document_topic_wins_over_local_topic_with_same_code():
         ),
     )
 
+    assert ("space", "chunk_generated_topic") not in repo.topics
+    assert ("space", "technical_maintenance") in repo.topics
     topic = repo.topics[("space", "technical_maintenance")]
     assert topic.name == "Technical maintenance"
     assert topic.description == "Document description"
@@ -335,9 +350,82 @@ async def test_document_topic_wins_over_local_topic_with_same_code():
         for ref in repo.information[0].topic_refs
     ]
     assert topic_codes == [
-        "railway_safety",
         "technical_maintenance",
     ]
+
+
+@pytest.mark.asyncio
+async def test_chunk_generated_topic_refs_are_not_persisted():
+    repo = FakeKnowledgeRepository()
+    raw = sample_response()
+    raw.pop("document_type")
+    raw["information"][0]["topic_refs"] = [
+        "chunk_generated_topic",
+    ]
+
+    await KnowledgeWriter(repo).write(
+        request(
+            raw_response=raw,
+            document_context=sample_document_context(),
+        ),
+    )
+
+    topic_codes = [
+        ref["code"]
+        for ref in repo.information[0].topic_refs
+    ]
+    assert topic_codes == [
+        "technical_maintenance",
+    ]
+    assert repo.information[0].raw_model_output["information"][0][
+        "topic_refs"
+    ] == ["chunk_generated_topic"]
+
+
+@pytest.mark.asyncio
+async def test_two_chunks_keep_different_objects_but_same_document_topic():
+    repo = FakeKnowledgeRepository()
+    writer = KnowledgeWriter(repo)
+    context = sample_document_context()
+    document_id = uuid4()
+    chunk_a = sample_response(
+        object_code="technology",
+        identifier_code="artificial_intelligence",
+        object_name="Technology",
+        identifier_name="Artificial intelligence",
+        summary="AI is used for pricing and customer analysis.",
+    )
+    chunk_b = sample_response(
+        object_code="generation_group",
+        identifier_code="gen_z",
+        object_name="Generation group",
+        identifier_name="Gen Z",
+        summary="Gen Z demand changes housing product design.",
+    )
+
+    await writer.write(
+        request(
+            raw_response=chunk_a,
+            document_context=context,
+            document_id=document_id,
+        )
+    )
+    await writer.write(
+        request(
+            raw_response=chunk_b,
+            document_context=context,
+            document_id=document_id,
+        )
+    )
+
+    assert len(repo.information) == 2
+    assert repo.information[0].object_refs != repo.information[1].object_refs
+    assert repo.information[0].topic_refs[0]["code"] == (
+        "technical_maintenance"
+    )
+    assert repo.information[1].topic_refs[0]["code"] == (
+        "technical_maintenance"
+    )
 
 
 def test_knowledge_write_request_document_context_is_not_any():
@@ -391,6 +479,17 @@ async def test_classification_passes_knowledge_space_id_to_write_request():
     assert classification_repository.classifications[0].label == "2"
     assert classification_repository.classifications[0].confidence is None
     assert use_case.document_structure_analyzer.calls == 1
+    assert (
+        use_case.classification_engine.received_document_context
+        is document_structure_analyzer.context
+    )
+    assert (
+        writer.requests[0].document_context.document_type.code
+        == "technical_document"
+    )
+    assert writer.requests[0].document_context.topic.code == (
+        "technical_maintenance"
+    )
 
 
 @pytest.mark.asyncio
@@ -428,11 +527,16 @@ async def test_transaction_rollback_when_knowledge_persistence_fails():
     assert uow.rolled_back is True
 
 
-def request(raw_response, document_context=None):
+def request(
+    raw_response,
+    document_context=None,
+    document_id=None,
+    chunk_id=None,
+):
     return KnowledgeWriteRequest(
         knowledge_space_id="space",
-        document_id=uuid4(),
-        chunk_id=uuid4(),
+        document_id=document_id or uuid4(),
+        chunk_id=chunk_id or uuid4(),
         model_name="gpt-test",
         raw_response=raw_response,
         document_context=document_context,
@@ -445,21 +549,26 @@ def sample_document_context():
             code="technical_document",
             name="Technical document",
         ),
-        topics=[
-            KnowledgeTopicContext(
-                code="technical_maintenance",
-                name="Technical maintenance",
-                description="Document description",
-                metadata={
-                    "source": "document",
-                },
-            ),
-        ],
+        topic=KnowledgeTopicContext(
+            code="technical_maintenance",
+            name="Technical maintenance",
+            description="Document description",
+            metadata={
+                "source": "document",
+            },
+        ),
         head=KnowledgeHeadContext(),
     )
 
 
-def sample_response():
+def sample_response(
+    *,
+    object_code="product",
+    identifier_code="product_a",
+    object_name="Product",
+    identifier_name="Product A",
+    summary="Product A voltage is 160 V.",
+):
     return {
         "sensitivity": {
             "level": 2,
@@ -485,30 +594,25 @@ def sample_response():
         ],
         "objects": [
             {
-                "object_code": "product",
-                "identifier_code": "product_a",
-                "object_name": "Product",
-                "identifier_name": "Product A",
-            }
-        ],
-        "topics": [
-            {
-                "code": "railway_safety",
-                "name": "Railway safety",
+                "object_code": object_code,
+                "identifier_code": identifier_code,
+                "object_name": object_name,
+                "identifier_name": identifier_name,
             }
         ],
         "information": [
             {
                 "information_type": "technical_specification",
-                "summary": "Product A voltage is 160 V.",
+                "summary": summary,
                 "data": {
                     "voltage": {
                         "value": 160,
                         "unit": "V",
                     }
                 },
-                "object_refs": ["product_a"],
-                "topic_refs": ["railway_safety"],
+                "object_refs": [
+                    identifier_code or object_code,
+                ],
                 "confidence": 0.9,
             }
         ],
@@ -592,8 +696,10 @@ class FakeClassificationEngine:
         self.document_structure_analyzer = (
             document_structure_analyzer
         )
+        self.received_document_context = None
 
     async def classify_batch(self, chunks, document_context):
+        self.received_document_context = document_context
         if self.document_structure_analyzer is not None:
             assert self.document_structure_analyzer.calls == 1
         return [
@@ -608,30 +714,31 @@ class FakeClassificationEngine:
 class FakeDocumentStructureAnalyzer:
     def __init__(self):
         self.calls = 0
-
-    async def analyze(self, *, ingestion_job_id, document_id):
-        self.calls += 1
         from module.ingest.classification.composition import (
             DocumentContext,
             DocumentContextDocumentType,
+            DocumentContextHead,
             DocumentContextTopic,
         )
 
-        return DocumentContext(
+        self.context = DocumentContext(
             document_type=DocumentContextDocumentType(
                 code="technical_document",
             ),
-            topics=[
-                DocumentContextTopic(
-                    code="technical_maintenance",
-                    name="Technical maintenance",
-                    description="Document description",
-                    metadata={
-                        "source": "document",
-                    },
-                )
-            ],
+            topic=DocumentContextTopic(
+                code="technical_maintenance",
+                name="Technical maintenance",
+                description="Document description",
+                metadata={
+                    "source": "document",
+                },
+            ),
+            head=DocumentContextHead(),
         )
+
+    async def analyze(self, *, ingestion_job_id, document_id):
+        self.calls += 1
+        return self.context
 
 
 class FakeClassificationRepository:

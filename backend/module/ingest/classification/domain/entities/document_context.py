@@ -31,5 +31,5 @@ class DocumentContextHead:
 @dataclass(frozen=True)
 class DocumentContext:
     document_type: DocumentContextDocumentType
-    topics: list[DocumentContextTopic] = field(default_factory=list)
-    head: DocumentContextHead = field(default_factory=DocumentContextHead)
+    topic: DocumentContextTopic
+    head: DocumentContextHead

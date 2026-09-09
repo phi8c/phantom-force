@@ -65,7 +65,10 @@ class LLMDocumentStructureAnalyzer(
         config = dict(prompt.configuration or {})
         response_format = config.pop(
             "response_format",
-            {"type": "json_object"},
+            None,
+        )
+        response_format = self._response_format_from_config(
+            response_format,
         )
 
         llm_result = await self._llm_gateway.generate(
@@ -95,11 +98,11 @@ class LLMDocumentStructureAnalyzer(
 
         logger.info(
             "document_structure analyzed document_id=%s model=%s "
-            "document_type=%s topics=%s head=%s",
+            "document_type=%s topic=%s head=%s",
             document_id,
             llm_result.model_code,
             context.document_type.code,
-            [topic.code for topic in context.topics],
+            context.topic.code,
             {
                 "type": context.head.type,
                 "code": context.head.code,
@@ -234,14 +237,19 @@ class LLMDocumentStructureAnalyzer(
         for key in (
             "document_title",
             "title",
-            "file_name",
         ):
             value = cls._optional_str(extracted.get(key))
-            if value:
+            if cls._is_meaningful_title(value):
                 return value
 
         if headings:
-            return cls._optional_str(headings[0].get("title"))
+            value = cls._optional_str(headings[0].get("title"))
+            if cls._is_meaningful_title(value):
+                return value
+
+        value = cls._optional_str(extracted.get("file_name"))
+        if value:
+            return value
 
         return None
 
@@ -260,14 +268,11 @@ class LLMDocumentStructureAnalyzer(
                         "description": "string or null",
                         "metadata": "object",
                     },
-                    "topics": {
-                        "type": "array",
-                        "item": {
-                            "code": "string",
-                            "name": "string or null",
-                            "description": "string or null",
-                            "metadata": "object",
-                        },
+                    "topic": {
+                        "code": "string",
+                        "name": "string or null",
+                        "description": "string or null",
+                        "metadata": "object",
                     },
                     "head": {
                         "type": "string or null",
@@ -293,43 +298,69 @@ class LLMDocumentStructureAnalyzer(
             )
 
         document_type = raw_response.get("document_type")
-        topics = raw_response.get("topics")
+        topic = raw_response.get("topic")
         head = raw_response.get("head")
 
-        if not isinstance(document_type, dict):
-            raise ValueError(
+        if "document_type" not in raw_response:
+            cls._raise_contract_error(
+                "missing_document_type",
                 "Document structure response missing document_type",
             )
-        if not isinstance(topics, list):
-            raise ValueError(
-                "Document structure response topics must be a list",
+        if not isinstance(document_type, dict):
+            cls._raise_contract_error(
+                "document_type_not_object",
+                "Document structure response document_type must be an object",
+                field="document_type",
+                actual_type=type(document_type).__name__,
+            )
+        if "topic" not in raw_response:
+            cls._raise_contract_error(
+                "missing_topic",
+                "Document structure response missing topic",
+            )
+        if not isinstance(topic, dict):
+            cls._raise_contract_error(
+                "topic_not_object",
+                "Document structure response topic must be an object",
+                field="topic",
+                actual_type=type(topic).__name__,
+            )
+        if "head" not in raw_response:
+            cls._raise_contract_error(
+                "head_missing",
+                "Document structure response missing head",
             )
         if not isinstance(head, dict):
-            raise ValueError(
-                "Document structure response missing head",
+            cls._raise_contract_error(
+                "head_not_object",
+                "Document structure response head must be an object",
+                field="head",
+                actual_type=type(head).__name__,
             )
 
         document_type_code = cls._required_code(
             document_type,
             "document_type",
+            reason="missing_invalid_document_type_code",
+            field="document_type.code",
         )
 
-        parsed_topics = []
-        for topic in topics:
-            if not isinstance(topic, dict):
-                raise ValueError(
-                    "Document structure topics items must be objects",
-                )
-            parsed_topics.append(
-                DocumentContextTopic(
-                    code=cls._required_code(topic, "topics"),
-                    name=cls._optional_str(topic.get("name")),
-                    description=cls._optional_str(
-                        topic.get("description"),
-                    ),
-                    metadata=cls._metadata(topic),
-                )
-            )
+        parsed_topic = DocumentContextTopic(
+            code=cls._required_code(
+                topic,
+                "topic",
+                reason="invalid_topic_code",
+                field="topic.code",
+            ),
+            name=cls._optional_str(topic.get("name")),
+            description=cls._optional_str(
+                topic.get("description"),
+            ),
+            metadata=cls._metadata(
+                topic,
+                field_name="topic.metadata",
+            ),
+        )
 
         return DocumentContext(
             document_type=DocumentContextDocumentType(
@@ -338,9 +369,12 @@ class LLMDocumentStructureAnalyzer(
                 description=cls._optional_str(
                     document_type.get("description"),
                 ),
-                metadata=cls._metadata(document_type),
+                metadata=cls._metadata(
+                    document_type,
+                    field_name="document_type.metadata",
+                ),
             ),
-            topics=parsed_topics,
+            topic=parsed_topic,
             head=DocumentContextHead(
                 type=cls._optional_str(head.get("type")),
                 code=cls._optional_str(head.get("code")),
@@ -348,7 +382,10 @@ class LLMDocumentStructureAnalyzer(
                 description=cls._optional_str(
                     head.get("description"),
                 ),
-                metadata=cls._metadata(head),
+                metadata=cls._metadata(
+                    head,
+                    field_name="head.metadata",
+                ),
             ),
         )
 
@@ -356,23 +393,124 @@ class LLMDocumentStructureAnalyzer(
     def _required_code(
         item: dict[str, Any],
         field_name: str,
+        *,
+        reason: str | None = None,
+        field: str | None = None,
+        index: int | None = None,
     ) -> str:
 
         code = item.get("code")
         if not isinstance(code, str) or not code.strip():
-            raise ValueError(
-                f"Document structure {field_name} missing code",
+            LLMDocumentStructureAnalyzer._raise_contract_error(
+                reason or f"missing_invalid_{field_name}_code",
+                f"Document structure response {field_name} code "
+                "must be a non-empty string",
+                field=field or f"{field_name}.code",
+                index=index,
+                actual_type=type(code).__name__,
             )
         return code.strip()
 
     @staticmethod
+    def _response_format_from_config(
+        response_format: Any,
+    ) -> dict[str, Any]:
+
+        json_object_format = {
+            "type": "json_object",
+        }
+
+        if response_format is None:
+            return json_object_format
+
+        if not isinstance(response_format, dict):
+            logger.warning(
+                "document_structure response_format_ignored reason=%s actual_type=%s",
+                "invalid_response_format_type",
+                type(response_format).__name__,
+            )
+            return json_object_format
+
+        if response_format.get("type") == "json_object":
+            return response_format
+
+        logger.warning(
+            "document_structure response_format_ignored reason=%s response_format=%s",
+            "invalid_response_format",
+            response_format,
+        )
+        return json_object_format
+
+    @staticmethod
+    def _raise_contract_error(
+        reason: str,
+        message: str,
+        *,
+        field: str | None = None,
+        index: int | None = None,
+        actual_type: str | None = None,
+    ) -> None:
+
+        logger.error(
+            "document_structure contract_invalid reason=%s field=%s index=%s actual_type=%s",
+            reason,
+            field,
+            index,
+            actual_type,
+        )
+        raise ValueError(message)
+
+    @staticmethod
+    def _is_meaningful_title(
+        value: str | None,
+    ) -> bool:
+
+        if not value:
+            return False
+
+        try:
+            UUID(value)
+            return False
+        except ValueError:
+            pass
+
+        lowered = value.strip().lower()
+        if lowered in {
+            "untitled",
+            "unknown",
+            "none",
+            "null",
+            "document",
+        }:
+            return False
+
+        technical_chars = sum(
+            1
+            for char in value
+            if char.isdigit() or char in {"-", "_", "."}
+        )
+        if technical_chars >= max(4, len(value) // 2):
+            return False
+
+        return any(char.isalpha() for char in value)
+
+    @staticmethod
     def _metadata(
         item: dict[str, Any],
+        *,
+        field_name: str,
+        index: int | None = None,
     ) -> dict[str, Any]:
 
         metadata = item.get("metadata", {})
         if not isinstance(metadata, dict):
-            return {}
+            LLMDocumentStructureAnalyzer._raise_contract_error(
+                "invalid_metadata",
+                "Document structure response metadata must be an object",
+                field=field_name,
+                index=index,
+                actual_type=type(metadata).__name__,
+            )
         return metadata
 
     @staticmethod

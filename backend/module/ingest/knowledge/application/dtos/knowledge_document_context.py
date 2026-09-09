@@ -31,5 +31,5 @@ class KnowledgeHeadContext:
 @dataclass(frozen=True)
 class KnowledgeDocumentContext:
     document_type: KnowledgeDocumentTypeContext
-    topics: list[KnowledgeTopicContext] = field(default_factory=list)
-    head: KnowledgeHeadContext = field(default_factory=KnowledgeHeadContext)
+    topic: KnowledgeTopicContext
+    head: KnowledgeHeadContext

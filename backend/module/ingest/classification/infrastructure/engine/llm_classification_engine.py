@@ -156,7 +156,6 @@ class LLMClassificationEngine(
                     "objects": "array",
                     "information_types": "array",
                     "information_fields": "array",
-                    "topics": "array",
                     "information": {
                         "type": "array",
                         "item": {
@@ -165,9 +164,6 @@ class LLMClassificationEngine(
                             "data": "object or null",
                             "object_refs": (
                                 "array of object identifier_code strings"
-                            ),
-                            "topic_refs": (
-                                "array of topic code strings"
                             ),
                             "confidence": "number from 0 to 1 or null",
                         },
@@ -191,15 +187,12 @@ class LLMClassificationEngine(
                 ),
                 "metadata": document_context.document_type.metadata,
             },
-            "topics": [
-                {
-                    "code": topic.code,
-                    "name": topic.name,
-                    "description": topic.description,
-                    "metadata": topic.metadata,
-                }
-                for topic in document_context.topics
-            ],
+            "topic": {
+                "code": document_context.topic.code,
+                "name": document_context.topic.name,
+                "description": document_context.topic.description,
+                "metadata": document_context.topic.metadata,
+            },
             "head": {
                 "type": document_context.head.type,
                 "code": document_context.head.code,
@@ -211,7 +204,7 @@ class LLMClassificationEngine(
 
     @staticmethod
     def _response_format_from_config(
-        response_format: dict[str, Any] | None,
+        response_format: Any,
     ) -> dict[str, Any]:
 
         json_object_format = {
@@ -219,6 +212,14 @@ class LLMClassificationEngine(
         }
 
         if response_format is None:
+            return json_object_format
+
+        if not isinstance(response_format, dict):
+            logger.warning(
+                "classification response_format_ignored reason=%s actual_type=%s",
+                "invalid_response_format_type",
+                type(response_format).__name__,
+            )
             return json_object_format
 
         if response_format.get("type") == "json_object":
