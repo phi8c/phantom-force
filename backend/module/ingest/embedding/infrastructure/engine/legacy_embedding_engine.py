@@ -1,3 +1,6 @@
+import logging
+from time import perf_counter
+
 from module.ingest.embedding.domain.contracts.chunk_reader import (
     ChunkForEmbedding,
 )
@@ -8,6 +11,9 @@ from module.ingest.embedding.domain.contracts.embedding_engine import (
 from module.ingest.embedding.domain.contracts.text_embedding_provider import (
     TextEmbeddingProvider,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class LegacyEmbeddingEngineAdapter(
@@ -68,15 +74,31 @@ class LegacyEmbeddingEngineAdapter(
         if not texts:
             return []
 
+        started_at = perf_counter()
+        logger.info(
+            "[TEXT_EMBEDDING] request_start deployment=%s model=%s input_count=%s total_chars=%s",
+            self._get_deployment(),
+            self._model_name,
+            len(texts),
+            sum(len(text) for text in texts),
+        )
         response = await self._get_client().embeddings.create(
             model=self._get_deployment(),
             input=texts,
         )
 
-        return [
+        vectors = [
             list(item.embedding)
             for item in response.data
         ]
+        logger.info(
+            "[TEXT_EMBEDDING] request_done deployment=%s elapsed_ms=%s vector_count=%s dimension=%s",
+            self._get_deployment(),
+            int((perf_counter() - started_at) * 1000),
+            len(vectors),
+            len(vectors[0]) if vectors else None,
+        )
+        return vectors
 
     def _get_client(self):
 

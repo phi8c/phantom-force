@@ -1,5 +1,6 @@
 import json
 import logging
+from time import perf_counter
 
 from module.ai.llm.composition import LLMGateway
 from module.ingest.knowledge.composition import (
@@ -38,8 +39,20 @@ class KnowledgeSelector:
         candidate_seeds: list[KnowledgeDiscoveredSeed],
     ) -> KnowledgeSelectionResult:
 
+        started_at = perf_counter()
+        logger.info(
+            "[KNOWLEDGE_SELECTION] start candidate_seed_count=%s",
+            len(candidate_seeds),
+        )
+
+        step_started_at = perf_counter()
         prompt = await self._prompt_provider.get_by_code(
             KnowledgeSelectionPromptCode.SELECT_KNOWLEDGE.value,
+        )
+        logger.info(
+            "[KNOWLEDGE_SELECTION] prompt_load_done elapsed_ms=%s found=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            prompt is not None,
         )
         if prompt is None:
             raise ValueError(
@@ -52,6 +65,15 @@ class KnowledgeSelector:
             {"type": "json_object"},
         )
 
+        user_prompt = self._build_user_prompt(
+            question=question,
+            candidate_seeds=candidate_seeds,
+        )
+        step_started_at = perf_counter()
+        logger.info(
+            "[KNOWLEDGE_SELECTION] llm_start user_prompt_chars=%s",
+            len(user_prompt),
+        )
         llm_result = await self._llm_gateway.generate(
             provider_code=(
                 KnowledgeSelectionProviderCode.AZURE_OPENAI.value
@@ -60,12 +82,15 @@ class KnowledgeSelector:
                 KnowledgeSelectionModelCode.SELECT_KNOWLEDGE.value
             ),
             system_prompt=prompt.system_prompt,
-            user_prompt=self._build_user_prompt(
-                question=question,
-                candidate_seeds=candidate_seeds,
-            ),
+            user_prompt=user_prompt,
             response_format=response_format,
             config=config,
+        )
+        logger.info(
+            "[KNOWLEDGE_SELECTION] llm_done elapsed_ms=%s finish_reason=%s usage=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            llm_result.finish_reason,
+            llm_result.usage,
         )
         if not llm_result.content:
             raise ValueError(
@@ -93,6 +118,10 @@ class KnowledgeSelector:
             ],
             [selection.topic_codes for selection in selections],
             [selection.field_codes for selection in selections],
+        )
+        logger.info(
+            "[KNOWLEDGE_SELECTION] done elapsed_ms=%s",
+            int((perf_counter() - started_at) * 1000),
         )
 
         return KnowledgeSelectionResult(

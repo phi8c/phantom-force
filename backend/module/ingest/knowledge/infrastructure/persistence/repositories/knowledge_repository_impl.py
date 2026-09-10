@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from datetime import timezone
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -591,6 +592,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         seed_vectors: list[KnowledgeSemanticSeedVectors] | None = None,
     ) -> list[KnowledgeDiscoveredSeedRecord]:
 
+        started_at = perf_counter()
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] discover_start space=%s seed_count=%s has_vectors=%s",
+            knowledge_space_id,
+            len(seeds),
+            bool(seed_vectors),
+        )
         discovered: list[KnowledgeDiscoveredSeedRecord] = []
         vectors_by_seed_id = {
             item.seed_id: item
@@ -607,6 +615,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             if seed_record is not None:
                 discovered.append(seed_record)
 
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] discover_done space=%s elapsed_ms=%s discovered_count=%s",
+            knowledge_space_id,
+            int((perf_counter() - started_at) * 1000),
+            len(discovered),
+        )
         return discovered
 
     async def retrieve_for_selection(
@@ -734,6 +748,17 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         seed_vectors: KnowledgeSemanticSeedVectors | None = None,
     ) -> KnowledgeDiscoveredSeedRecord | None:
 
+        started_at = perf_counter()
+        seed_id = str(seed["seed_id"])
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] discover_seed_start seed_id=%s object=%s identifier=%s information_type=%s topics=%s has_vectors=%s",
+            seed_id,
+            seed.get("object_code"),
+            seed.get("identifier_code"),
+            seed.get("information_type_code"),
+            seed.get("topic_codes", []),
+            seed_vectors is not None,
+        )
         matched_entry_points = KnowledgeMatchedEntryPointsRecord(
             objects=await self._match_objects(
                 knowledge_space_id=knowledge_space_id,
@@ -776,15 +801,27 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             matched_entry_points=matched_entry_points,
         )
         if not base_filters:
+            logger.info(
+                "[KNOWLEDGE_REPOSITORY] discover_seed_no_entry_points seed_id=%s elapsed_ms=%s",
+                seed_id,
+                int((perf_counter() - started_at) * 1000),
+            )
             return None
 
+        step_started_at = perf_counter()
         rows = await self._load_reachable_structure_rows(
             knowledge_space_id=knowledge_space_id,
             base_filters=base_filters,
         )
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] discover_seed_reachable_loaded seed_id=%s elapsed_ms=%s row_count=%s",
+            seed_id,
+            int((perf_counter() - step_started_at) * 1000),
+            len(rows),
+        )
 
-        return KnowledgeDiscoveredSeedRecord(
-            seed_id=str(seed["seed_id"]),
+        record = KnowledgeDiscoveredSeedRecord(
+            seed_id=seed_id,
             matched_entry_points=matched_entry_points,
             available_objects=await self._available_objects(
                 knowledge_space_id=knowledge_space_id,
@@ -806,6 +843,19 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             ),
             constraints=dict(seed.get("constraints") or {}),
         )
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] discover_seed_done seed_id=%s elapsed_ms=%s matched_objects=%s matched_information_types=%s matched_topics=%s available_objects=%s available_information_types=%s available_topics=%s available_fields=%s",
+            seed_id,
+            int((perf_counter() - started_at) * 1000),
+            len(record.matched_entry_points.objects),
+            len(record.matched_entry_points.information_types),
+            len(record.matched_entry_points.topics),
+            len(record.available_objects),
+            len(record.available_information_types),
+            len(record.available_topics),
+            len(record.available_fields),
+        )
+        return record
 
     async def _match_objects(
         self,
@@ -1096,6 +1146,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             return []
 
         distance = model_class.embedding.cosine_distance(vector)
+        started_at = perf_counter()
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] vector_code_search_start kind=%s space=%s top_k=%s",
+            model_class.__tablename__,
+            knowledge_space_id,
+            top_k,
+        )
         result = await self.session.execute(
             select(model_class)
             .where(
@@ -1112,6 +1169,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 continue
             seen.add(model.code)
             records.append(record_factory(model))
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] vector_code_search kind=%s space=%s elapsed_ms=%s candidate_count=%s",
+            model_class.__tablename__,
+            knowledge_space_id,
+            int((perf_counter() - started_at) * 1000),
+            len(records),
+        )
         return records
 
     async def _vector_object_candidates(
@@ -1125,6 +1189,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
     ) -> list[KnowledgeObjectStructureRecord]:
 
         distance = column.cosine_distance(vector)
+        started_at = perf_counter()
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] vector_object_search_start column=%s space=%s top_k=%s",
+            getattr(column, "key", str(column)),
+            knowledge_space_id,
+            top_k,
+        )
         result = await self.session.execute(
             select(KnowledgeObjectModel)
             .where(
@@ -1146,6 +1217,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 continue
             seen.add(key)
             records.append(self._object_record(model))
+        logger.info(
+            "[KNOWLEDGE_REPOSITORY] vector_object_search column=%s space=%s elapsed_ms=%s candidate_count=%s",
+            getattr(column, "key", str(column)),
+            knowledge_space_id,
+            int((perf_counter() - started_at) * 1000),
+            len(records),
+        )
         return records
 
     async def _missing_code_embeddings(

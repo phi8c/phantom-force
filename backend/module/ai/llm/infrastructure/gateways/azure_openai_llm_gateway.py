@@ -1,4 +1,6 @@
 from typing import Any
+import logging
+from time import perf_counter
 
 from module.ai.llm.application.services.ai_model_provider import (
     AIModelProvider,
@@ -9,6 +11,9 @@ from module.ai.llm.domain.contracts.llm_gateway import (
 from module.ai.llm.domain.value_objects.llm_result import (
     LLMResult,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AzureOpenAILLMGateway(
@@ -33,9 +38,20 @@ class AzureOpenAILLMGateway(
         config: dict[str, Any] | None = None,
     ) -> LLMResult:
 
+        started_at = perf_counter()
+        logger.info(
+            "[AZURE_OPENAI_LLM] resolve_start provider_code=%s model_code=%s",
+            provider_code,
+            model_code,
+        )
         resolved_model = await self._ai_model_provider.get(
             provider_code=provider_code,
             model_code=model_code,
+        )
+        logger.info(
+            "[AZURE_OPENAI_LLM] resolve_done elapsed_ms=%s found=%s",
+            int((perf_counter() - started_at) * 1000),
+            resolved_model is not None,
         )
 
         if resolved_model is None:
@@ -77,13 +93,33 @@ class AzureOpenAILLMGateway(
         if response_format is not None:
             request["response_format"] = response_format
 
+        logger.info(
+            "[AZURE_OPENAI_LLM] request_start provider=%s model=%s deployment=%s system_chars=%s user_chars=%s response_format=%s config_keys=%s",
+            provider.code,
+            model.code,
+            deployment,
+            len(system_prompt or ""),
+            len(user_prompt or ""),
+            response_format,
+            sorted(request_config.keys()),
+        )
+
+        request_started_at = perf_counter()
         response = await client.chat.completions.create(
             **request,
+        )
+        logger.info(
+            "[AZURE_OPENAI_LLM] request_done provider=%s model=%s deployment=%s elapsed_ms=%s response_id=%s",
+            provider.code,
+            model.code,
+            deployment,
+            int((perf_counter() - request_started_at) * 1000),
+            getattr(response, "id", None),
         )
 
         choice = response.choices[0]
 
-        return LLMResult(
+        result = LLMResult(
             content=choice.message.content,
             provider_code=provider.code,
             model_code=model.code,
@@ -105,6 +141,15 @@ class AzureOpenAILLMGateway(
                 ),
             ),
         )
+        logger.info(
+            "[AZURE_OPENAI_LLM] done provider=%s model=%s elapsed_ms=%s finish_reason=%s usage=%s",
+            provider.code,
+            model.code,
+            int((perf_counter() - started_at) * 1000),
+            result.finish_reason,
+            result.usage,
+        )
+        return result
 
     def _get_client(
         self,

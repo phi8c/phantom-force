@@ -1,4 +1,6 @@
 from uuid import UUID
+import logging
+from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,9 @@ from module.ingest.embedding.domain.contracts.text_embedding_provider import (
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_embedding_config_repository_impl import (
     KnowledgeSpaceEmbeddingConfigRepositoryImpl,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class DbEmbeddingEngineResolver(
@@ -72,6 +77,12 @@ class DbEmbeddingEngineResolver(
         knowledge_space_id: UUID,
     ) -> TextEmbeddingProvider:
 
+        started_at = perf_counter()
+        logger.info(
+            "[TEXT_EMBEDDING_RESOLVER] start knowledge_space_id=%s",
+            knowledge_space_id,
+        )
+
         embedding_config = (
             await self._embedding_config_repository
             .get_by_knowledge_space_id(
@@ -115,7 +126,7 @@ class DbEmbeddingEngineResolver(
             ),
         }
 
-        return self._create_engine(
+        provider = self._create_engine(
             code=embedding_model.code,
             provider=embedding_model.provider,
             model_name=configuration.get(
@@ -133,6 +144,14 @@ class DbEmbeddingEngineResolver(
             )
             or embedding_model.code,
         )
+        logger.info(
+            "[TEXT_EMBEDDING_RESOLVER] done knowledge_space_id=%s elapsed_ms=%s provider=%s model=%s",
+            knowledge_space_id,
+            int((perf_counter() - started_at) * 1000),
+            embedding_model.provider,
+            embedding_model.code,
+        )
+        return provider
 
     def _create_engine(
         self,

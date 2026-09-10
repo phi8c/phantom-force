@@ -1,4 +1,6 @@
 from uuid import UUID
+import logging
+from time import perf_counter
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -32,6 +34,8 @@ from module.launch_on_railway.navigation.composition import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/chat",
     tags=["chat"],
@@ -59,6 +63,13 @@ class ChatHttpResponse(BaseModel):
 async def chat(
     request: ChatHttpRequest,
 ) -> ChatHttpResponse:
+
+    started_at = perf_counter()
+    logger.info(
+        "[CHAT_API] request_start knowledge_space_id=%s question_chars=%s",
+        request.knowledge_space_id,
+        len(request.question),
+    )
 
     async with get_session() as session:
 
@@ -108,6 +119,12 @@ async def chat(
                 question=request.question,
             )
         )
+
+    logger.info(
+        "[CHAT_API] request_done knowledge_space_id=%s elapsed_ms=%s",
+        request.knowledge_space_id,
+        int((perf_counter() - started_at) * 1000),
+    )
 
     return ChatHttpResponse(
         answer=result.answer,

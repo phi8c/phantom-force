@@ -1,4 +1,5 @@
 import logging
+from time import perf_counter
 from uuid import UUID
 
 from module.ingest.knowledge.composition import (
@@ -44,6 +45,7 @@ class NavigationService:
 
         items: list[NavigationItem] = []
         seen_information_ids: set[str] = set()
+        started_at = perf_counter()
 
         logger.info(
             "[LR_NAVIGATION] start knowledge_space_id=%s intent=%s seed_count=%s",
@@ -52,6 +54,8 @@ class NavigationService:
             len(analysis.seeds),
         )
 
+        step_started_at = perf_counter()
+        logger.info("[LR_NAVIGATION] discovery_start")
         discovery = await self._knowledge_reader.discover(
             KnowledgeDiscoveryRequest(
                 knowledge_space_id=knowledge_space_id,
@@ -70,19 +74,32 @@ class NavigationService:
                 ],
             )
         )
+        logger.info(
+            "[LR_NAVIGATION] discovery_done elapsed_ms=%s discovered_seed_count=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            len(discovery.seeds),
+        )
 
         if not discovery.seeds:
             logger.info(
-                "[LR_NAVIGATION] completed total_information=%s",
+                "[LR_NAVIGATION] completed total_information=%s elapsed_ms=%s",
                 len(items),
+                int((perf_counter() - started_at) * 1000),
             )
             return NavigationResult(
                 items=items,
             )
 
+        step_started_at = perf_counter()
+        logger.info("[LR_NAVIGATION] selection_start")
         selection_result = await self._knowledge_selector.select(
             question=question,
             candidate_seeds=discovery.seeds,
+        )
+        logger.info(
+            "[LR_NAVIGATION] selection_done elapsed_ms=%s selection_count=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            len(selection_result.selections),
         )
 
         discovered_by_id = {
@@ -97,6 +114,11 @@ class NavigationService:
             if discovered_seed is None:
                 continue
 
+            step_started_at = perf_counter()
+            logger.info(
+                "[LR_NAVIGATION] retrieval_start seed_id=%s",
+                selection.seed_id,
+            )
             result = await self._knowledge_reader.retrieve(
                 KnowledgeRetrievalRequest(
                     knowledge_space_id=knowledge_space_id,
@@ -111,6 +133,12 @@ class NavigationService:
                         constraints=selection.constraints,
                     ),
                 )
+            )
+            logger.info(
+                "[LR_NAVIGATION] retrieval_done seed_id=%s elapsed_ms=%s item_count=%s",
+                selection.seed_id,
+                int((perf_counter() - step_started_at) * 1000),
+                len(result.items),
             )
 
             for item in result.items:
@@ -135,8 +163,9 @@ class NavigationService:
                 )
 
         logger.info(
-            "[LR_NAVIGATION] completed total_information=%s",
+            "[LR_NAVIGATION] completed total_information=%s elapsed_ms=%s",
             len(items),
+            int((perf_counter() - started_at) * 1000),
         )
 
         return NavigationResult(

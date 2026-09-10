@@ -1,5 +1,6 @@
 import json
 import logging
+from time import perf_counter
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -37,8 +38,20 @@ class QueryAnalyzer:
         request: QueryAnalysisRequest,
     ) -> QueryAnalysisResult:
 
+        started_at = perf_counter()
+        logger.info(
+            "[QUERY_ANALYSIS] start question_chars=%s",
+            len(request.question),
+        )
+
+        step_started_at = perf_counter()
         prompt = await self._prompt_provider.get_by_code(
             QueryAnalysisPromptCode.ANALYZE_QUERY.value,
+        )
+        logger.info(
+            "[QUERY_ANALYSIS] prompt_load_done elapsed_ms=%s found=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            prompt is not None,
         )
 
         if prompt is None:
@@ -53,13 +66,25 @@ class QueryAnalyzer:
             {"type": "json_object"},
         )
 
+        user_prompt = self._build_user_prompt(request)
+        step_started_at = perf_counter()
+        logger.info(
+            "[QUERY_ANALYSIS] llm_start user_prompt_chars=%s",
+            len(user_prompt),
+        )
         llm_result = await self._llm_gateway.generate(
             provider_code=QueryAnalysisProviderCode.AZURE_OPENAI.value,
             model_code=QueryAnalysisModelCode.ANALYZE_QUERY.value,
             system_prompt=prompt.system_prompt,
-            user_prompt=self._build_user_prompt(request),
+            user_prompt=user_prompt,
             response_format=response_format,
             config=config,
+        )
+        logger.info(
+            "[QUERY_ANALYSIS] llm_done elapsed_ms=%s finish_reason=%s usage=%s",
+            int((perf_counter() - step_started_at) * 1000),
+            llm_result.finish_reason,
+            llm_result.usage,
         )
 
         if not llm_result.content:
@@ -96,6 +121,10 @@ class QueryAnalyzer:
                 }
                 for seed in seeds
             ],
+        )
+        logger.info(
+            "[QUERY_ANALYSIS] done elapsed_ms=%s",
+            int((perf_counter() - started_at) * 1000),
         )
 
         return QueryAnalysisResult(

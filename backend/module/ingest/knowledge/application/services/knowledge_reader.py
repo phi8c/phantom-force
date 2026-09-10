@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Awaitable
 from collections.abc import Callable
+from time import perf_counter
 from uuid import UUID
 
 from module.ingest.knowledge.application.dtos.knowledge_search_request import (
@@ -237,6 +238,7 @@ class KnowledgeReader:
         if self._embedder_factory is None:
             return None
 
+        started_at = perf_counter()
         texts = []
         for seed in request.seeds:
             for text in (
@@ -252,6 +254,12 @@ class KnowledgeReader:
         if not unique_texts:
             return []
 
+        logger.info(
+            "[KNOWLEDGE_DISCOVERY] seed_embedding_start space=%s input_count=%s unique_count=%s",
+            request.knowledge_space_id,
+            len(texts),
+            len(unique_texts),
+        )
         embedder = await self._embedder_factory(
             request.knowledge_space_id,
         )
@@ -265,6 +273,11 @@ class KnowledgeReader:
             request.knowledge_space_id,
             len(texts),
             len(unique_texts),
+        )
+        logger.info(
+            "[KNOWLEDGE_DISCOVERY] seed_embedding_done space=%s elapsed_ms=%s",
+            request.knowledge_space_id,
+            int((perf_counter() - started_at) * 1000),
         )
 
         return [
