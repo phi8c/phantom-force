@@ -2,7 +2,7 @@ import json
 
 from module.ingest.knowledge.application.dtos import (
     KnowledgeCodeStructure,
-    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveredRequest,
     KnowledgeMatchedEntryPoints,
     KnowledgeObjectStructure,
 )
@@ -12,8 +12,8 @@ from module.launch_on_railway.knowledge_selection.application.services.knowledge
 
 
 def test_build_user_prompt_uses_knowledge_candidates_contract():
-    candidate = KnowledgeDiscoveredSeed(
-        seed_id="knowledge_1",
+    candidate = KnowledgeDiscoveredRequest(
+        request_id="knowledge_1",
         need="Compare cache policies",
         original_seeds={
             "topic_seeds": [
@@ -96,8 +96,8 @@ def test_build_user_prompt_uses_knowledge_candidates_contract():
 
 
 def test_parse_selections_accepts_request_id_and_validates_candidates():
-    candidate = KnowledgeDiscoveredSeed(
-        seed_id="knowledge_1",
+    candidate = KnowledgeDiscoveredRequest(
+        request_id="knowledge_1",
         matched_entry_points=KnowledgeMatchedEntryPoints(),
         available_information_types=[
             KnowledgeCodeStructure(
@@ -158,7 +158,6 @@ def test_parse_selections_accepts_request_id_and_validates_candidates():
 
     assert len(selections) == 1
     assert selections[0].request_id == "knowledge_1"
-    assert selections[0].seed_id == "knowledge_1"
     assert selections[0].information_type_codes == [
         "policy",
     ]
@@ -167,4 +166,78 @@ def test_parse_selections_accepts_request_id_and_validates_candidates():
     ]
     assert selections[0].field_codes == [
         "ttl",
+    ]
+
+
+def test_parse_selections_can_select_subset_and_multiple_topics():
+    candidates = [
+        KnowledgeDiscoveredRequest(
+            request_id="knowledge_1",
+            matched_entry_points=KnowledgeMatchedEntryPoints(),
+            available_topics=[
+                KnowledgeCodeStructure(
+                    code="topic_a",
+                    name="Topic A",
+                ),
+                KnowledgeCodeStructure(
+                    code="topic_b",
+                    name="Topic B",
+                ),
+            ],
+        ),
+        KnowledgeDiscoveredRequest(
+            request_id="knowledge_2",
+            matched_entry_points=KnowledgeMatchedEntryPoints(),
+            available_topics=[
+                KnowledgeCodeStructure(
+                    code="topic_c",
+                    name="Topic C",
+                ),
+            ],
+        ),
+        KnowledgeDiscoveredRequest(
+            request_id="knowledge_3",
+            matched_entry_points=KnowledgeMatchedEntryPoints(),
+            available_topics=[
+                KnowledgeCodeStructure(
+                    code="topic_d",
+                    name="Topic D",
+                ),
+            ],
+        ),
+    ]
+
+    selections = KnowledgeSelector._parse_selections(
+        [
+            {
+                "request_id": "knowledge_1",
+                "information_type_codes": [],
+                "topic_codes": [
+                    "topic_a",
+                    "topic_b",
+                ],
+                "field_codes": [],
+            },
+            {
+                "request_id": "knowledge_3",
+                "information_type_codes": [],
+                "topic_codes": [
+                    "topic_d",
+                ],
+                "field_codes": [],
+            },
+        ],
+        knowledge_candidates=candidates,
+    )
+
+    assert [
+        selection.request_id
+        for selection in selections
+    ] == [
+        "knowledge_1",
+        "knowledge_3",
+    ]
+    assert selections[0].topic_codes == [
+        "topic_a",
+        "topic_b",
     ]

@@ -1,10 +1,9 @@
 from module.ingest.knowledge.application.dtos.knowledge_discovery import (
     KnowledgeCodeStructure,
-    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveredRequest,
     KnowledgeDiscoveryRequest,
     KnowledgeDiscoveryRequestItem,
     KnowledgeDiscoveryResult,
-    KnowledgeDiscoverySeed,
     KnowledgeMatchedEntryPoints,
     KnowledgeObjectStructure,
     KnowledgeRetrievalRequest,
@@ -39,11 +38,10 @@ from module.ingest.knowledge.composition.factory import (
 
 __all__ = [
     "KnowledgeCodeStructure",
-    "KnowledgeDiscoveredSeed",
+    "KnowledgeDiscoveredRequest",
     "KnowledgeDiscoveryRequest",
     "KnowledgeDiscoveryRequestItem",
     "KnowledgeDiscoveryResult",
-    "KnowledgeDiscoverySeed",
     "KnowledgeDocumentContext",
     "KnowledgeDocumentTypeContext",
     "KnowledgeHeadContext",

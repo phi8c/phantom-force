@@ -96,6 +96,33 @@ def test_parse_knowledge_requests_enforces_limits_and_dedupes():
     assert request.confidence == 0.82
 
 
+def test_parse_simple_vietnamese_question_shape():
+    parsed = QueryAnalyzer._parse_knowledge_requests(
+        [
+            {
+                "need": "Tìm điều kiện nghiệm thu",
+                "topic_seeds": [
+                    "nghiệm thu",
+                ],
+                "information_type_seeds": [
+                    "điều kiện",
+                ],
+                "confidence": 0.7,
+            }
+        ]
+    )
+
+    assert len(parsed) == 1
+    assert parsed[0].need == "Tìm điều kiện nghiệm thu"
+    assert parsed[0].topic_seeds == [
+        "nghiệm thu",
+    ]
+    assert parsed[0].information_type_seeds == [
+        "điều kiện",
+    ]
+    assert parsed[0].confidence == 0.7
+
+
 def test_parse_knowledge_requests_keeps_valid_need_without_seeds():
     parsed = QueryAnalyzer._parse_knowledge_requests(
         [
@@ -116,6 +143,26 @@ def test_parse_knowledge_requests_keeps_valid_need_without_seeds():
         "scope": "broad",
     }
     assert parsed[0].confidence is None
+
+
+def test_parse_knowledge_requests_discards_empty_need():
+    parsed = QueryAnalyzer._parse_knowledge_requests(
+        [
+            {
+                "need": "",
+                "topic_seeds": [
+                    "acceptance",
+                ],
+            },
+            {
+                "topic_seeds": [
+                    "deployment",
+                ],
+            },
+        ]
+    )
+
+    assert parsed == []
 
 
 def test_parse_knowledge_requests_ignores_legacy_flat_seeds_shape():
@@ -145,3 +192,36 @@ def test_parse_knowledge_requests_limits_request_count():
 
     assert len(parsed) == MAX_KNOWLEDGE_REQUESTS
     assert parsed[-1].need == f"Need {MAX_KNOWLEDGE_REQUESTS - 1}"
+
+
+def test_confidence_validation_only_accepts_zero_to_one():
+    parsed = QueryAnalyzer._parse_knowledge_requests(
+        [
+            {
+                "need": "Below lower bound",
+                "confidence": -1,
+            },
+            {
+                "need": "Above upper bound",
+                "confidence": 2,
+            },
+            {
+                "need": "Invalid confidence",
+                "confidence": "invalid",
+            },
+            {
+                "need": "Valid confidence",
+                "confidence": 0.7,
+            },
+        ]
+    )
+
+    assert [
+        item.confidence
+        for item in parsed
+    ] == [
+        None,
+        None,
+        None,
+        0.7,
+    ]

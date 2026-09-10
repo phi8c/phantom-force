@@ -46,7 +46,3 @@ class QueryAnalysisResult:
     intent: str
     knowledge_requests: list[KnowledgeRequest]
     raw_response: dict[str, Any]
-
-    @property
-    def seeds(self) -> list[KnowledgeRequest]:
-        return self.knowledge_requests

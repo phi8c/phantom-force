@@ -16,7 +16,3 @@ class ChatResponse:
     information: list[dict[str, Any]] = field(
         default_factory=list,
     )
-
-    @property
-    def seeds(self) -> list[dict[str, Any]]:
-        return self.knowledge_requests

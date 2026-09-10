@@ -5,7 +5,7 @@ from uuid import UUID
 
 from module.ingest.knowledge.domain.entities import (
     KnowledgeDocumentType,
-    KnowledgeDiscoveredSeedRecord,
+    KnowledgeDiscoveredRequestRecord,
     KnowledgeInformation,
     KnowledgeInformationField,
     KnowledgeInformationSearchRecord,
@@ -13,7 +13,7 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeObject,
     KnowledgeRegistryEmbeddingTarget,
     KnowledgeRegistryEmbeddingUpdate,
-    KnowledgeSemanticSeedVectors,
+    KnowledgeSemanticRequestVectors,
     KnowledgeTopic,
 )
 
@@ -99,9 +99,9 @@ class KnowledgeRepository(ABC):
         self,
         *,
         knowledge_space_id: UUID,
-        seeds: list[dict[str, Any]],
-        seed_vectors: list[KnowledgeSemanticSeedVectors] | None = None,
-    ) -> list[KnowledgeDiscoveredSeedRecord]:
+        requests: list[dict[str, Any]],
+        request_vectors: list[KnowledgeSemanticRequestVectors] | None = None,
+    ) -> list[KnowledgeDiscoveredRequestRecord]:
         pass
 
     @abstractmethod
@@ -109,7 +109,7 @@ class KnowledgeRepository(ABC):
         self,
         *,
         knowledge_space_id: UUID,
-        discovered_seed: KnowledgeDiscoveredSeedRecord,
+        discovered_request: KnowledgeDiscoveredRequestRecord,
         information_type_codes: list[str],
         topic_codes: list[str],
         field_codes: list[str],

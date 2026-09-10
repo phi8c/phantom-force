@@ -113,7 +113,7 @@ class NavigationService:
         )
 
         discovered_by_id = {
-            request.seed_id: request
+            request.request_id: request
             for request in discovery.requests
         }
 
@@ -132,9 +132,9 @@ class NavigationService:
             result = await self._knowledge_reader.retrieve(
                 KnowledgeRetrievalRequest(
                     knowledge_space_id=knowledge_space_id,
-                    discovered_seed=discovered_request,
+                    discovered_request=discovered_request,
                     selection=KnowledgeRetrievalSelection(
-                        seed_id=selection.request_id,
+                        request_id=selection.request_id,
                         information_type_codes=(
                             selection.information_type_codes
                         ),

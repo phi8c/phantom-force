@@ -126,8 +126,8 @@ class KnowledgeMatchedEntryPointsRecord:
 
 
 @dataclass
-class KnowledgeDiscoveredSeedRecord:
-    seed_id: str
+class KnowledgeDiscoveredRequestRecord:
+    request_id: str
     matched_entry_points: KnowledgeMatchedEntryPointsRecord
     need: str = ""
     original_seeds: dict[str, list[str]] | None = None

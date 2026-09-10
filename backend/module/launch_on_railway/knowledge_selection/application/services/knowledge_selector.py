@@ -4,7 +4,7 @@ from time import perf_counter
 
 from module.ai.llm.composition import LLMGateway
 from module.ingest.knowledge.composition import (
-    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveredRequest,
 )
 from module.prompt.composition import PromptProvider
 
@@ -36,19 +36,13 @@ class KnowledgeSelector:
         self,
         *,
         question: str,
-        knowledge_candidates: list[KnowledgeDiscoveredSeed] | None = None,
-        candidate_seeds: list[KnowledgeDiscoveredSeed] | None = None,
+        knowledge_candidates: list[KnowledgeDiscoveredRequest],
     ) -> KnowledgeSelectionResult:
 
-        candidates = (
-            knowledge_candidates
-            if knowledge_candidates is not None
-            else candidate_seeds or []
-        )
         started_at = perf_counter()
         logger.info(
             "[KNOWLEDGE_SELECTION] start knowledge_candidate_count=%s",
-            len(candidates),
+            len(knowledge_candidates),
         )
 
         step_started_at = perf_counter()
@@ -73,7 +67,7 @@ class KnowledgeSelector:
 
         user_prompt = self._build_user_prompt(
             question=question,
-            knowledge_candidates=candidates,
+            knowledge_candidates=knowledge_candidates,
         )
         step_started_at = perf_counter()
         logger.info(
@@ -111,7 +105,7 @@ class KnowledgeSelector:
 
         selections = self._parse_selections(
             raw_response.get("selections", []),
-            knowledge_candidates=candidates,
+            knowledge_candidates=knowledge_candidates,
         )
 
         logger.info(
@@ -140,14 +134,14 @@ class KnowledgeSelector:
         cls,
         raw_selections,
         *,
-        knowledge_candidates: list[KnowledgeDiscoveredSeed],
+        knowledge_candidates: list[KnowledgeDiscoveredRequest],
     ) -> list[KnowledgeSelection]:
 
         if not isinstance(raw_selections, list):
             return []
 
         candidates_by_id = {
-            candidate.seed_id: candidate
+            candidate.request_id: candidate
             for candidate in knowledge_candidates
         }
         selections: list[KnowledgeSelection] = []
@@ -157,7 +151,6 @@ class KnowledgeSelector:
 
             request_id = (
                 raw_selection.get("request_id")
-                or raw_selection.get("seed_id")
             )
             if request_id is None:
                 continue
@@ -234,7 +227,7 @@ class KnowledgeSelector:
         cls,
         *,
         question: str,
-        knowledge_candidates: list[KnowledgeDiscoveredSeed],
+        knowledge_candidates: list[KnowledgeDiscoveredRequest],
     ) -> str:
 
         return json.dumps(
@@ -270,11 +263,11 @@ class KnowledgeSelector:
     @classmethod
     def _candidate_payload(
         cls,
-        candidate: KnowledgeDiscoveredSeed,
+        candidate: KnowledgeDiscoveredRequest,
     ) -> dict:
 
         return {
-            "request_id": candidate.seed_id,
+            "request_id": candidate.request_id,
             "need": candidate.need,
             "original_seeds": candidate.original_seeds,
             "matched_entry_points": {

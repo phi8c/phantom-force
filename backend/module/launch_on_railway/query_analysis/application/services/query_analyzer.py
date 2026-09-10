@@ -259,9 +259,12 @@ class QueryAnalyzer:
         if value is None:
             return None
         try:
-            return float(value)
+            confidence = float(value)
         except (TypeError, ValueError):
             return None
+        if not 0.0 <= confidence <= 1.0:
+            return None
+        return confidence
 
     @staticmethod
     def _has_semantic_seed(

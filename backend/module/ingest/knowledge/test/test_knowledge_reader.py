@@ -5,7 +5,6 @@ import pytest
 from module.ingest.knowledge.application.dtos import (
     KnowledgeDiscoveryRequest,
     KnowledgeDiscoveryRequestItem,
-    KnowledgeDiscoverySeed,
 )
 from module.ingest.knowledge.application.services.knowledge_reader import (
     KnowledgeReader,
@@ -27,21 +26,33 @@ async def test_discovery_embeds_seed_strings_in_one_deduplicated_batch():
     await reader.discover(
         KnowledgeDiscoveryRequest(
             knowledge_space_id=knowledge_space_id,
-            seeds=[
-                KnowledgeDiscoverySeed(
-                    seed_id="seed-1",
-                    object_code="artificial_intelligence",
-                    information_type_code="trend",
-                    topic_codes=[
+            items=[
+                KnowledgeDiscoveryRequestItem(
+                    request_id="knowledge_1",
+                    need="Find AI housing trends",
+                    object_seeds=[
+                        "artificial_intelligence",
+                    ],
+                    information_type_seeds=[
+                        "trend",
+                    ],
+                    topic_seeds=[
                         "housing_market_trends",
                     ],
                 ),
-                KnowledgeDiscoverySeed(
-                    seed_id="seed-2",
-                    object_code="artificial_intelligence",
-                    identifier_code="gen_z",
-                    information_type_code="trend",
-                    topic_codes=[
+                KnowledgeDiscoveryRequestItem(
+                    request_id="knowledge_2",
+                    need="Find Gen Z AI housing trends",
+                    object_seeds=[
+                        "artificial_intelligence",
+                    ],
+                    identifier_seeds=[
+                        "gen_z",
+                    ],
+                    information_type_seeds=[
+                        "trend",
+                    ],
+                    topic_seeds=[
                         "housing_market_trends",
                     ],
                 ),
@@ -58,10 +69,14 @@ async def test_discovery_embeds_seed_strings_in_one_deduplicated_batch():
         ]
     ]
     assert repository.calls[0]["knowledge_space_id"] == knowledge_space_id
-    seed_vectors = repository.calls[0]["seed_vectors"]
-    assert len(seed_vectors) == 2
-    assert seed_vectors[0].object_vector == [2.0]
-    assert seed_vectors[1].identifier_vector == [4.0]
+    request_vectors = repository.calls[0]["request_vectors"]
+    assert len(request_vectors) == 2
+    assert request_vectors[0].object_vectors == {
+        "artificial_intelligence": [2.0],
+    }
+    assert request_vectors[1].identifier_vectors == {
+        "gen_z": [4.0],
+    }
 
 
 @pytest.mark.asyncio
@@ -127,13 +142,13 @@ async def test_discovery_embeds_grouped_request_seed_lists_without_permutation()
         ]
     ]
     call = repository.calls[0]
-    assert len(call["seeds"]) == 1
-    assert call["seeds"][0]["request_id"] == "knowledge_1"
-    assert call["seeds"][0]["need"] == "Compare cache policy"
-    assert call["seeds"][0]["head_seeds"] == [
+    assert len(call["requests"]) == 1
+    assert call["requests"][0]["request_id"] == "knowledge_1"
+    assert call["requests"][0]["need"] == "Compare cache policy"
+    assert call["requests"][0]["head_seeds"] == [
         "browser_policy",
     ]
-    vectors = call["seed_vectors"][0]
+    vectors = call["request_vectors"][0]
     assert vectors.document_type_vectors == {
         "technical_document": [1.0],
     }
@@ -157,6 +172,64 @@ async def test_discovery_embeds_grouped_request_seed_lists_without_permutation()
     }
 
 
+@pytest.mark.asyncio
+async def test_discovery_preserves_one_request_and_skips_head_embedding():
+    repository = RecordingDiscoveryRepository()
+    embedder = FakeTextEmbeddingProvider()
+    reader = KnowledgeReader(
+        repository=repository,
+        embedder_factory=lambda knowledge_space_id: fake_embedder(
+            embedder,
+        ),
+    )
+
+    await reader.discover(
+        KnowledgeDiscoveryRequest(
+            knowledge_space_id=uuid4(),
+            items=[
+                KnowledgeDiscoveryRequestItem(
+                    request_id="knowledge_1",
+                    need="Find requirements across topics",
+                    head_seeds=[
+                        "acceptance section",
+                    ],
+                    topic_seeds=[
+                        "acceptance",
+                        "deployment",
+                        "acceptance",
+                    ],
+                    object_seeds=[
+                        "project",
+                    ],
+                )
+            ],
+        )
+    )
+
+    assert embedder.calls == [
+        [
+            "acceptance",
+            "deployment",
+            "project",
+        ]
+    ]
+    call = repository.calls[0]
+    assert len(call["requests"]) == 1
+    assert call["requests"][0]["request_id"] == "knowledge_1"
+    assert call["requests"][0]["head_seeds"] == [
+        "acceptance section",
+    ]
+    vectors = call["request_vectors"][0]
+    assert vectors.request_id == "knowledge_1"
+    assert vectors.topic_vectors == {
+        "acceptance": [1.0],
+        "deployment": [2.0],
+    }
+    assert vectors.object_vectors == {
+        "project": [3.0],
+    }
+
+
 class RecordingDiscoveryRepository:
     def __init__(self):
         self.calls = []
@@ -165,14 +238,14 @@ class RecordingDiscoveryRepository:
         self,
         *,
         knowledge_space_id,
-        seeds,
-        seed_vectors=None,
+        requests,
+        request_vectors=None,
     ):
         self.calls.append(
             {
                 "knowledge_space_id": knowledge_space_id,
-                "seeds": seeds,
-                "seed_vectors": seed_vectors,
+                "requests": requests,
+                "request_vectors": request_vectors,
             }
         )
         return []

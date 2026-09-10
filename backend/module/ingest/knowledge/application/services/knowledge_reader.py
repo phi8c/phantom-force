@@ -13,7 +13,7 @@ from module.ingest.knowledge.application.dtos.knowledge_search_result import (
 )
 from module.ingest.knowledge.application.dtos.knowledge_discovery import (
     KnowledgeCodeStructure,
-    KnowledgeDiscoveredSeed,
+    KnowledgeDiscoveredRequest,
     KnowledgeDiscoveryRequest,
     KnowledgeDiscoveryResult,
     KnowledgeMatchedEntryPoints,
@@ -25,10 +25,10 @@ from module.ingest.knowledge.domain.contracts.knowledge_repository import (
 )
 from module.ingest.knowledge.domain.entities import (
     KnowledgeCodeStructureRecord,
-    KnowledgeDiscoveredSeedRecord,
+    KnowledgeDiscoveredRequestRecord,
     KnowledgeMatchedEntryPointsRecord,
     KnowledgeObjectStructureRecord,
-    KnowledgeSemanticSeedVectors,
+    KnowledgeSemanticRequestVectors,
 )
 from module.ingest.embedding.domain.contracts.text_embedding_provider import (
     TextEmbeddingProvider,
@@ -106,15 +106,14 @@ class KnowledgeReader:
             len(request.items),
         )
 
-        seed_vectors = await self._embed_seed_strings(
+        request_vectors = await self._embed_seed_strings(
             request,
         )
 
         records = await self._repository.discover(
             knowledge_space_id=request.knowledge_space_id,
-            seeds=[
+            requests=[
                 {
-                    "seed_id": item.request_id,
                     "request_id": item.request_id,
                     "need": item.need,
                     "document_type_seeds": (
@@ -130,21 +129,15 @@ class KnowledgeReader:
                     "information_field_seeds": (
                         item.information_field_seeds
                     ),
-                    "object_code": item.object_code,
-                    "identifier_code": item.identifier_code,
-                    "information_type_code": (
-                        item.information_type_code
-                    ),
-                    "topic_codes": item.topic_codes,
                     "constraints": item.constraints,
                 }
                 for item in request.items
             ],
-            seed_vectors=seed_vectors,
+            request_vectors=request_vectors,
         )
 
-        seeds = [
-            self._discovered_seed(record)
+        discovered_requests = [
+            self._discovered_request(record)
             for record in records
         ]
         requested_by_id = {
@@ -152,16 +145,18 @@ class KnowledgeReader:
             for item in request.items
         }
 
-        for seed in seeds:
-            requested = requested_by_id.get(seed.seed_id)
+        for discovered_request in discovered_requests:
+            requested = requested_by_id.get(
+                discovered_request.request_id,
+            )
             logger.info(
                 "[KNOWLEDGE_DISCOVERY] request_id=%s need=%s "
                 "requested_semantic_seeds=%s "
                 "matched_objects=%s matched_information_types=%s matched_topics=%s matched_fields=%s "
                 "available_information_type_count=%s available_topic_count=%s "
                 "available_field_count=%s",
-                seed.seed_id,
-                seed.need,
+                discovered_request.request_id,
+                discovered_request.need,
                 (
                     {
                         "document_type_seeds": (
@@ -186,29 +181,33 @@ class KnowledgeReader:
                         "object_code": item.object_code,
                         "identifier_code": item.identifier_code,
                     }
-                    for item in seed.matched_entry_points.objects
-                ],
-                [
-                    item.code
                     for item in (
-                        seed.matched_entry_points.information_types
+                        discovered_request.matched_entry_points.objects
                     )
                 ],
                 [
                     item.code
-                    for item in seed.matched_entry_points.topics
+                    for item in (
+                        discovered_request
+                        .matched_entry_points
+                        .information_types
+                    )
                 ],
                 [
                     item.code
-                    for item in seed.matched_entry_points.fields
+                    for item in discovered_request.matched_entry_points.topics
                 ],
-                len(seed.available_information_types),
-                len(seed.available_topics),
-                len(seed.available_fields),
+                [
+                    item.code
+                    for item in discovered_request.matched_entry_points.fields
+                ],
+                len(discovered_request.available_information_types),
+                len(discovered_request.available_topics),
+                len(discovered_request.available_fields),
             )
 
         return KnowledgeDiscoveryResult(
-            seeds=seeds,
+            requests=discovered_requests,
         )
 
     async def retrieve(
@@ -218,8 +217,8 @@ class KnowledgeReader:
 
         records = await self._repository.retrieve_for_selection(
             knowledge_space_id=request.knowledge_space_id,
-            discovered_seed=self._discovered_seed_record(
-                request.discovered_seed,
+            discovered_request=self._discovered_request_record(
+                request.discovered_request,
             ),
             information_type_codes=(
                 request.selection.information_type_codes
@@ -231,7 +230,7 @@ class KnowledgeReader:
         logger.info(
             "[KNOWLEDGE_RETRIEVAL] selection=%s information_count=%s",
             {
-                "seed_id": request.selection.seed_id,
+                "request_id": request.selection.request_id,
                 "information_type_codes": (
                     request.selection.information_type_codes
                 ),
@@ -260,7 +259,7 @@ class KnowledgeReader:
     async def _embed_seed_strings(
         self,
         request: KnowledgeDiscoveryRequest,
-    ) -> list[KnowledgeSemanticSeedVectors] | None:
+    ) -> list[KnowledgeSemanticRequestVectors] | None:
 
         if self._embedder_factory is None:
             return None
@@ -306,8 +305,8 @@ class KnowledgeReader:
         )
 
         return [
-            KnowledgeSemanticSeedVectors(
-                seed_id=item.request_id,
+            KnowledgeSemanticRequestVectors(
+                request_id=item.request_id,
                 document_type_vectors=self._vectors_for_texts(
                     item.document_type_seeds,
                     vector_by_text,
@@ -350,10 +349,10 @@ class KnowledgeReader:
         }
 
     @classmethod
-    def _discovered_seed(cls, record) -> KnowledgeDiscoveredSeed:
+    def _discovered_request(cls, record) -> KnowledgeDiscoveredRequest:
 
-        return KnowledgeDiscoveredSeed(
-            seed_id=record.seed_id,
+        return KnowledgeDiscoveredRequest(
+            request_id=record.request_id,
             matched_entry_points=KnowledgeMatchedEntryPoints(
                 objects=[
                     cls._object_structure(item)
@@ -419,54 +418,54 @@ class KnowledgeReader:
         )
 
     @classmethod
-    def _discovered_seed_record(
+    def _discovered_request_record(
         cls,
-        seed: KnowledgeDiscoveredSeed,
-    ) -> KnowledgeDiscoveredSeedRecord:
+        request: KnowledgeDiscoveredRequest,
+    ) -> KnowledgeDiscoveredRequestRecord:
 
-        return KnowledgeDiscoveredSeedRecord(
-            seed_id=seed.seed_id,
+        return KnowledgeDiscoveredRequestRecord(
+            request_id=request.request_id,
             matched_entry_points=KnowledgeMatchedEntryPointsRecord(
                 objects=[
                     cls._object_structure_record(item)
-                    for item in seed.matched_entry_points.objects
+                    for item in request.matched_entry_points.objects
                 ],
                 information_types=[
                     cls._code_structure_record(item)
                     for item in (
-                        seed
+                        request
                         .matched_entry_points
                         .information_types
                     )
                 ],
                 topics=[
                     cls._code_structure_record(item)
-                    for item in seed.matched_entry_points.topics
+                    for item in request.matched_entry_points.topics
                 ],
                 fields=[
                     cls._code_structure_record(item)
-                    for item in seed.matched_entry_points.fields
+                    for item in request.matched_entry_points.fields
                 ],
             ),
-            need=seed.need,
-            original_seeds=seed.original_seeds,
+            need=request.need,
+            original_seeds=request.original_seeds,
             available_objects=[
                 cls._object_structure_record(item)
-                for item in seed.available_objects
+                for item in request.available_objects
             ],
             available_information_types=[
                 cls._code_structure_record(item)
-                for item in seed.available_information_types
+                for item in request.available_information_types
             ],
             available_topics=[
                 cls._code_structure_record(item)
-                for item in seed.available_topics
+                for item in request.available_topics
             ],
             available_fields=[
                 cls._code_structure_record(item)
-                for item in seed.available_fields
+                for item in request.available_fields
             ],
-            constraints=seed.constraints,
+            constraints=request.constraints,
         )
 
     @staticmethod

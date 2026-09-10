@@ -1,6 +1,6 @@
 from module.ingest.knowledge.domain.entities.knowledge_entities import (
     KnowledgeCodeStructureRecord,
-    KnowledgeDiscoveredSeedRecord,
+    KnowledgeDiscoveredRequestRecord,
     KnowledgeDocumentType,
     KnowledgeInformation,
     KnowledgeInformationField,
@@ -15,12 +15,12 @@ from module.ingest.knowledge.domain.entities.knowledge_embedding import (
     KnowledgeRegistryEmbeddingKind,
     KnowledgeRegistryEmbeddingTarget,
     KnowledgeRegistryEmbeddingUpdate,
-    KnowledgeSemanticSeedVectors,
+    KnowledgeSemanticRequestVectors,
 )
 
 __all__ = [
     "KnowledgeCodeStructureRecord",
-    "KnowledgeDiscoveredSeedRecord",
+    "KnowledgeDiscoveredRequestRecord",
     "KnowledgeDocumentType",
     "KnowledgeInformation",
     "KnowledgeInformationField",
@@ -32,6 +32,6 @@ __all__ = [
     "KnowledgeRegistryEmbeddingKind",
     "KnowledgeRegistryEmbeddingTarget",
     "KnowledgeRegistryEmbeddingUpdate",
-    "KnowledgeSemanticSeedVectors",
+    "KnowledgeSemanticRequestVectors",
     "KnowledgeTopic",
 ]

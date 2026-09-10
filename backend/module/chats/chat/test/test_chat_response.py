@@ -3,7 +3,7 @@ from module.chats.chat.application.dtos.response.chat_response import (
 )
 
 
-def test_chat_response_exposes_knowledge_requests_with_legacy_seed_alias():
+def test_chat_response_exposes_knowledge_requests():
     response = ChatResponse(
         answer="Done",
         knowledge_requests=[
@@ -18,4 +18,3 @@ def test_chat_response_exposes_knowledge_requests_with_legacy_seed_alias():
             "need": "Compare policies",
         }
     ]
-    assert response.seeds == response.knowledge_requests

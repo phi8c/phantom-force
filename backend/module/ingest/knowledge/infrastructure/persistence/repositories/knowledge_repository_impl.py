@@ -15,7 +15,7 @@ from module.ingest.knowledge.domain.contracts.knowledge_repository import (
 )
 from module.ingest.knowledge.domain.entities import (
     KnowledgeCodeStructureRecord,
-    KnowledgeDiscoveredSeedRecord,
+    KnowledgeDiscoveredRequestRecord,
     KnowledgeDocumentType,
     KnowledgeInformation,
     KnowledgeInformationField,
@@ -27,7 +27,7 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeRegistryEmbeddingKind,
     KnowledgeRegistryEmbeddingTarget,
     KnowledgeRegistryEmbeddingUpdate,
-    KnowledgeSemanticSeedVectors,
+    KnowledgeSemanticRequestVectors,
     KnowledgeTopic,
 )
 from module.ingest.knowledge.infrastructure.persistence.mappers import (
@@ -588,32 +588,32 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         self,
         *,
         knowledge_space_id: UUID,
-        seeds: list[dict[str, Any]],
-        seed_vectors: list[KnowledgeSemanticSeedVectors] | None = None,
-    ) -> list[KnowledgeDiscoveredSeedRecord]:
+        requests: list[dict[str, Any]],
+        request_vectors: list[KnowledgeSemanticRequestVectors] | None = None,
+    ) -> list[KnowledgeDiscoveredRequestRecord]:
 
         started_at = perf_counter()
         logger.info(
-            "[KNOWLEDGE_REPOSITORY] discover_start space=%s seed_count=%s has_vectors=%s",
+            "[KNOWLEDGE_REPOSITORY] discover_start space=%s request_count=%s has_vectors=%s",
             knowledge_space_id,
-            len(seeds),
-            bool(seed_vectors),
+            len(requests),
+            bool(request_vectors),
         )
-        discovered: list[KnowledgeDiscoveredSeedRecord] = []
-        vectors_by_seed_id = {
-            item.seed_id: item
-            for item in seed_vectors or []
+        discovered: list[KnowledgeDiscoveredRequestRecord] = []
+        vectors_by_request_id = {
+            item.request_id: item
+            for item in request_vectors or []
         }
-        for seed in seeds:
-            seed_record = await self._discover_seed(
+        for request in requests:
+            request_record = await self._discover_request(
                 knowledge_space_id=knowledge_space_id,
-                seed=seed,
-                seed_vectors=vectors_by_seed_id.get(
-                    str(seed["seed_id"]),
+                request=request,
+                request_vectors=vectors_by_request_id.get(
+                    str(request["request_id"]),
                 ),
             )
-            if seed_record is not None:
-                discovered.append(seed_record)
+            if request_record is not None:
+                discovered.append(request_record)
 
         logger.info(
             "[KNOWLEDGE_REPOSITORY] discover_done space=%s elapsed_ms=%s discovered_count=%s",
@@ -627,7 +627,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         self,
         *,
         knowledge_space_id: UUID,
-        discovered_seed: KnowledgeDiscoveredSeedRecord,
+        discovered_request: KnowledgeDiscoveredRequestRecord,
         information_type_codes: list[str],
         topic_codes: list[str],
         field_codes: list[str],
@@ -635,7 +635,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
 
         base_filters = self._entry_point_filters(
             knowledge_space_id=knowledge_space_id,
-            discovered_seed=discovered_seed,
+            discovered_request=discovered_request,
         )
         if not base_filters:
             return []
@@ -740,47 +740,45 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         )
         return int(result.scalar_one())
 
-    async def _discover_seed(
+    async def _discover_request(
         self,
         *,
         knowledge_space_id: UUID,
-        seed: dict[str, Any],
-        seed_vectors: KnowledgeSemanticSeedVectors | None = None,
-    ) -> KnowledgeDiscoveredSeedRecord | None:
+        request: dict[str, Any],
+        request_vectors: KnowledgeSemanticRequestVectors | None = None,
+    ) -> KnowledgeDiscoveredRequestRecord | None:
 
         started_at = perf_counter()
-        seed_id = str(seed["seed_id"])
+        request_id = str(request["request_id"])
         logger.info(
-            "[KNOWLEDGE_REPOSITORY] discover_seed_start seed_id=%s object_seeds=%s identifier_seeds=%s information_type_seeds=%s topic_seeds=%s field_seeds=%s has_vectors=%s",
-            seed_id,
-            seed.get("object_seeds") or [],
-            seed.get("identifier_seeds") or [],
-            seed.get("information_type_seeds") or [],
-            seed.get("topic_seeds") or [],
-            seed.get("information_field_seeds") or [],
-            seed_vectors is not None,
+            "[KNOWLEDGE_REPOSITORY] discover_request_start request_id=%s object_seeds=%s identifier_seeds=%s information_type_seeds=%s topic_seeds=%s field_seeds=%s has_vectors=%s",
+            request_id,
+            request.get("object_seeds") or [],
+            request.get("identifier_seeds") or [],
+            request.get("information_type_seeds") or [],
+            request.get("topic_seeds") or [],
+            request.get("information_field_seeds") or [],
+            request_vectors is not None,
         )
         matched_entry_points = KnowledgeMatchedEntryPointsRecord(
             objects=await self._match_objects_from_seeds(
                 knowledge_space_id=knowledge_space_id,
                 object_codes=self._seed_values(
-                    seed,
+                    request,
                     "object_seeds",
-                    fallback_key="object_code",
                 ),
                 identifier_codes=self._seed_values(
-                    seed,
+                    request,
                     "identifier_seeds",
-                    fallback_key="identifier_code",
                 ),
                 object_vectors=(
-                    seed_vectors.object_vectors
-                    if seed_vectors is not None
+                    request_vectors.object_vectors
+                    if request_vectors is not None
                     else None
                 ),
                 identifier_vectors=(
-                    seed_vectors.identifier_vectors
-                    if seed_vectors is not None
+                    request_vectors.identifier_vectors
+                    if request_vectors is not None
                     else None
                 ),
             ),
@@ -789,15 +787,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 record_factory=self._information_type_record,
                 knowledge_space_id=knowledge_space_id,
                 codes=self._seed_values(
-                    seed,
+                    request,
                     "information_type_seeds",
-                    fallback_key=(
-                        "information_type_code"
-                    ),
                 ),
                 vectors=(
-                    seed_vectors.information_type_vectors
-                    if seed_vectors is not None
+                    request_vectors.information_type_vectors
+                    if request_vectors is not None
                     else None
                 ),
             ),
@@ -806,13 +801,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 record_factory=self._topic_record,
                 knowledge_space_id=knowledge_space_id,
                 codes=self._seed_values(
-                    seed,
+                    request,
                     "topic_seeds",
-                    fallback_key="topic_codes",
                 ),
                 vectors=(
-                    seed_vectors.topic_vectors
-                    if seed_vectors is not None
+                    request_vectors.topic_vectors
+                    if request_vectors is not None
                     else None
                 ),
             ),
@@ -821,12 +815,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 record_factory=self._field_record,
                 knowledge_space_id=knowledge_space_id,
                 codes=self._seed_values(
-                    seed,
+                    request,
                     "information_field_seeds",
                 ),
                 vectors=(
-                    seed_vectors.information_field_vectors
-                    if seed_vectors is not None
+                    request_vectors.information_field_vectors
+                    if request_vectors is not None
                     else None
                 ),
             ),
@@ -837,8 +831,8 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         )
         if not base_filters:
             logger.info(
-                "[KNOWLEDGE_REPOSITORY] discover_seed_no_entry_points seed_id=%s elapsed_ms=%s",
-                seed_id,
+                "[KNOWLEDGE_REPOSITORY] discover_request_no_entry_points request_id=%s elapsed_ms=%s",
+                request_id,
                 int((perf_counter() - started_at) * 1000),
             )
             return None
@@ -849,31 +843,31 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             base_filters=base_filters,
         )
         logger.info(
-            "[KNOWLEDGE_REPOSITORY] discover_seed_reachable_loaded seed_id=%s elapsed_ms=%s row_count=%s",
-            seed_id,
+            "[KNOWLEDGE_REPOSITORY] discover_request_reachable_loaded request_id=%s elapsed_ms=%s row_count=%s",
+            request_id,
             int((perf_counter() - step_started_at) * 1000),
             len(rows),
         )
 
-        record = KnowledgeDiscoveredSeedRecord(
-            seed_id=seed_id,
+        record = KnowledgeDiscoveredRequestRecord(
+            request_id=request_id,
             matched_entry_points=matched_entry_points,
-            need=str(seed.get("need") or ""),
+            need=str(request.get("need") or ""),
             original_seeds={
                 "document_type_seeds": list(
-                    seed.get("document_type_seeds") or [],
+                    request.get("document_type_seeds") or [],
                 ),
-                "head_seeds": list(seed.get("head_seeds") or []),
-                "topic_seeds": list(seed.get("topic_seeds") or []),
-                "object_seeds": list(seed.get("object_seeds") or []),
+                "head_seeds": list(request.get("head_seeds") or []),
+                "topic_seeds": list(request.get("topic_seeds") or []),
+                "object_seeds": list(request.get("object_seeds") or []),
                 "identifier_seeds": list(
-                    seed.get("identifier_seeds") or [],
+                    request.get("identifier_seeds") or [],
                 ),
                 "information_type_seeds": list(
-                    seed.get("information_type_seeds") or [],
+                    request.get("information_type_seeds") or [],
                 ),
                 "information_field_seeds": list(
-                    seed.get("information_field_seeds") or [],
+                    request.get("information_field_seeds") or [],
                 ),
             },
             available_objects=await self._available_objects(
@@ -894,11 +888,11 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 knowledge_space_id=knowledge_space_id,
                 rows=rows,
             ),
-            constraints=dict(seed.get("constraints") or {}),
+            constraints=dict(request.get("constraints") or {}),
         )
         logger.info(
-            "[KNOWLEDGE_REPOSITORY] discover_seed_done seed_id=%s elapsed_ms=%s matched_objects=%s matched_information_types=%s matched_topics=%s matched_fields=%s available_objects=%s available_information_types=%s available_topics=%s available_fields=%s",
-            seed_id,
+            "[KNOWLEDGE_REPOSITORY] discover_request_done request_id=%s elapsed_ms=%s matched_objects=%s matched_information_types=%s matched_topics=%s matched_fields=%s available_objects=%s available_information_types=%s available_topics=%s available_fields=%s",
+            request_id,
             int((perf_counter() - started_at) * 1000),
             len(record.matched_entry_points.objects),
             len(record.matched_entry_points.information_types),
@@ -1046,151 +1040,6 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             len(codes),
             len(candidates),
         )
-        return candidates
-
-    async def _match_objects(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        object_code: str | None,
-        identifier_code: str | None,
-        object_vector: list[float] | None = None,
-        identifier_vector: list[float] | None = None,
-    ) -> list[KnowledgeObjectStructureRecord]:
-
-        if object_code is None and identifier_code is None:
-            return []
-
-        exact_models = []
-        if object_code is not None:
-            statement = select(KnowledgeObjectModel).where(
-                KnowledgeObjectModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeObjectModel.object_code == object_code,
-            )
-            if identifier_code is not None:
-                statement = statement.where(
-                    KnowledgeObjectModel.identifier_code
-                    == identifier_code,
-                )
-            result = await self.session.execute(statement)
-            exact_models = list(result.scalars().all())
-        elif identifier_code is not None:
-            result = await self.session.execute(
-                select(KnowledgeObjectModel).where(
-                    KnowledgeObjectModel.knowledge_space_id
-                    == knowledge_space_id,
-                    KnowledgeObjectModel.identifier_code
-                    == identifier_code,
-                )
-            )
-            exact_models = list(result.scalars().all())
-
-        candidates = [
-            self._object_record(model)
-            for model in exact_models
-        ]
-        seen = {
-            (
-                item.object_code,
-                item.identifier_code,
-            )
-            for item in candidates
-        }
-
-        if object_vector is not None:
-            candidates.extend(
-                await self._vector_object_candidates(
-                    knowledge_space_id=knowledge_space_id,
-                    vector=object_vector,
-                    column=KnowledgeObjectModel.object_embedding,
-                    seen=seen,
-                )
-            )
-        if identifier_vector is not None:
-            candidates.extend(
-                await self._vector_object_candidates(
-                    knowledge_space_id=knowledge_space_id,
-                    vector=identifier_vector,
-                    column=KnowledgeObjectModel.identifier_embedding,
-                    seen=seen,
-                )
-            )
-        return candidates
-
-    async def _match_information_types(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        information_type_code: str | None,
-        information_type_vector: list[float] | None = None,
-    ) -> list[KnowledgeCodeStructureRecord]:
-
-        if information_type_code is None and information_type_vector is None:
-            return []
-
-        candidates = []
-        if information_type_code is not None:
-            result = await self.session.execute(
-                select(KnowledgeInformationTypeModel).where(
-                    KnowledgeInformationTypeModel.knowledge_space_id
-                    == knowledge_space_id,
-                    KnowledgeInformationTypeModel.code
-                    == information_type_code,
-                )
-            )
-            candidates.extend(
-                self._information_type_record(model)
-                for model in result.scalars().all()
-            )
-
-        candidates.extend(
-            await self._vector_code_candidates(
-                model_class=KnowledgeInformationTypeModel,
-                record_factory=self._information_type_record,
-                knowledge_space_id=knowledge_space_id,
-                vector=information_type_vector,
-                seen={item.code for item in candidates},
-            )
-        )
-        return candidates
-
-    async def _match_topics(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        topic_codes: list[str],
-        topic_vectors: dict[str, list[float]] | None = None,
-    ) -> list[KnowledgeCodeStructureRecord]:
-
-        if not topic_codes and not topic_vectors:
-            return []
-
-        candidates = []
-        if topic_codes:
-            result = await self.session.execute(
-                select(KnowledgeTopicModel).where(
-                    KnowledgeTopicModel.knowledge_space_id
-                    == knowledge_space_id,
-                    KnowledgeTopicModel.code.in_(topic_codes),
-                )
-            )
-            candidates.extend(
-                self._topic_record(model)
-                for model in result.scalars().all()
-            )
-
-        seen = {item.code for item in candidates}
-        for vector in (topic_vectors or {}).values():
-            candidates.extend(
-                await self._vector_code_candidates(
-                    model_class=KnowledgeTopicModel,
-                    record_factory=self._topic_record,
-                    knowledge_space_id=knowledge_space_id,
-                    vector=vector,
-                    seen=seen,
-                )
-            )
         return candidates
 
     async def _load_reachable_structure_rows(
@@ -1480,12 +1329,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         self,
         *,
         knowledge_space_id: UUID,
-        discovered_seed: KnowledgeDiscoveredSeedRecord,
+        discovered_request: KnowledgeDiscoveredRequestRecord,
     ):
 
         return self._entry_point_filters_from_matches(
             knowledge_space_id=knowledge_space_id,
-            matched_entry_points=discovered_seed.matched_entry_points,
+            matched_entry_points=discovered_request.matched_entry_points,
         )
 
     @staticmethod
@@ -1556,15 +1405,11 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
 
     @staticmethod
     def _seed_values(
-        seed: dict[str, Any],
+        request: dict[str, Any],
         key: str,
-        *,
-        fallback_key: str | None = None,
     ) -> list[str]:
 
-        value = seed.get(key)
-        if value is None and fallback_key is not None:
-            value = seed.get(fallback_key)
+        value = request.get(key)
         if value is None:
             return []
         if not isinstance(value, list):
