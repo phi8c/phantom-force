@@ -64,10 +64,10 @@ class ChatService:
             )
         )
         logger.info(
-            "[CHAT_SERVICE] query_analysis_done elapsed_ms=%s intent=%s seed_count=%s",
+            "[CHAT_SERVICE] query_analysis_done elapsed_ms=%s intent=%s knowledge_request_count=%s",
             int((perf_counter() - step_started_at) * 1000),
             analysis.intent,
-            len(analysis.seeds),
+            len(analysis.knowledge_requests),
         )
 
         # 2. Navigate structured knowledge
@@ -147,18 +147,26 @@ class ChatService:
         response = ChatResponse(
             answer=llm_result.content,
             intent=analysis.intent,
-            seeds=[
+            knowledge_requests=[
                 {
-                    "object_code": seed.object_code,
-                    "identifier_code": seed.identifier_code,
-                    "information_type_code": (
-                        seed.information_type_code
+                    "need": request.need,
+                    "document_type_seeds": (
+                        request.document_type_seeds
                     ),
-                    "topic_codes": seed.topic_codes,
-                    "constraints": seed.constraints,
-                    "confidence": seed.confidence,
+                    "head_seeds": request.head_seeds,
+                    "topic_seeds": request.topic_seeds,
+                    "object_seeds": request.object_seeds,
+                    "identifier_seeds": request.identifier_seeds,
+                    "information_type_seeds": (
+                        request.information_type_seeds
+                    ),
+                    "information_field_seeds": (
+                        request.information_field_seeds
+                    ),
+                    "constraints": request.constraints,
+                    "confidence": request.confidence,
                 }
-                for seed in analysis.seeds
+                for request in analysis.knowledge_requests
             ],
             information=[
                 {

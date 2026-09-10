@@ -4,6 +4,7 @@ import pytest
 
 from module.ingest.knowledge.application.dtos import (
     KnowledgeDiscoveryRequest,
+    KnowledgeDiscoveryRequestItem,
     KnowledgeDiscoverySeed,
 )
 from module.ingest.knowledge.application.services.knowledge_reader import (
@@ -50,17 +51,110 @@ async def test_discovery_embeds_seed_strings_in_one_deduplicated_batch():
 
     assert embedder.calls == [
         [
+            "housing_market_trends",
             "artificial_intelligence",
             "trend",
-            "housing_market_trends",
             "gen_z",
         ]
     ]
     assert repository.calls[0]["knowledge_space_id"] == knowledge_space_id
     seed_vectors = repository.calls[0]["seed_vectors"]
     assert len(seed_vectors) == 2
-    assert seed_vectors[0].object_vector == [1.0]
+    assert seed_vectors[0].object_vector == [2.0]
     assert seed_vectors[1].identifier_vector == [4.0]
+
+
+@pytest.mark.asyncio
+async def test_discovery_embeds_grouped_request_seed_lists_without_permutation():
+    repository = RecordingDiscoveryRepository()
+    embedder = FakeTextEmbeddingProvider()
+    reader = KnowledgeReader(
+        repository=repository,
+        embedder_factory=lambda knowledge_space_id: fake_embedder(
+            embedder,
+        ),
+    )
+
+    await reader.discover(
+        KnowledgeDiscoveryRequest(
+            knowledge_space_id=uuid4(),
+            items=[
+                KnowledgeDiscoveryRequestItem(
+                    request_id="knowledge_1",
+                    need="Compare cache policy",
+                    document_type_seeds=[
+                        "technical_document",
+                    ],
+                    head_seeds=[
+                        "browser_policy",
+                    ],
+                    topic_seeds=[
+                        "cache_policy",
+                        "browser_cache",
+                    ],
+                    object_seeds=[
+                        "chrome",
+                        "edge",
+                    ],
+                    identifier_seeds=[
+                        "chrome",
+                    ],
+                    information_type_seeds=[
+                        "policy",
+                        "configuration",
+                    ],
+                    information_field_seeds=[
+                        "ttl",
+                    ],
+                    constraints={
+                        "scope": "comparison",
+                    },
+                )
+            ],
+        )
+    )
+
+    assert embedder.calls == [
+        [
+            "technical_document",
+            "cache_policy",
+            "browser_cache",
+            "chrome",
+            "edge",
+            "policy",
+            "configuration",
+            "ttl",
+        ]
+    ]
+    call = repository.calls[0]
+    assert len(call["seeds"]) == 1
+    assert call["seeds"][0]["request_id"] == "knowledge_1"
+    assert call["seeds"][0]["need"] == "Compare cache policy"
+    assert call["seeds"][0]["head_seeds"] == [
+        "browser_policy",
+    ]
+    vectors = call["seed_vectors"][0]
+    assert vectors.document_type_vectors == {
+        "technical_document": [1.0],
+    }
+    assert vectors.topic_vectors == {
+        "cache_policy": [2.0],
+        "browser_cache": [3.0],
+    }
+    assert vectors.object_vectors == {
+        "chrome": [4.0],
+        "edge": [5.0],
+    }
+    assert vectors.identifier_vectors == {
+        "chrome": [4.0],
+    }
+    assert vectors.information_type_vectors == {
+        "policy": [6.0],
+        "configuration": [7.0],
+    }
+    assert vectors.information_field_vectors == {
+        "ttl": [8.0],
+    }
 
 
 class RecordingDiscoveryRepository:

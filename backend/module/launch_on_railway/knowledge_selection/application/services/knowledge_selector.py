@@ -36,13 +36,19 @@ class KnowledgeSelector:
         self,
         *,
         question: str,
-        candidate_seeds: list[KnowledgeDiscoveredSeed],
+        knowledge_candidates: list[KnowledgeDiscoveredSeed] | None = None,
+        candidate_seeds: list[KnowledgeDiscoveredSeed] | None = None,
     ) -> KnowledgeSelectionResult:
 
+        candidates = (
+            knowledge_candidates
+            if knowledge_candidates is not None
+            else candidate_seeds or []
+        )
         started_at = perf_counter()
         logger.info(
-            "[KNOWLEDGE_SELECTION] start candidate_seed_count=%s",
-            len(candidate_seeds),
+            "[KNOWLEDGE_SELECTION] start knowledge_candidate_count=%s",
+            len(candidates),
         )
 
         step_started_at = perf_counter()
@@ -67,7 +73,7 @@ class KnowledgeSelector:
 
         user_prompt = self._build_user_prompt(
             question=question,
-            candidate_seeds=candidate_seeds,
+            knowledge_candidates=candidates,
         )
         step_started_at = perf_counter()
         logger.info(
@@ -105,13 +111,13 @@ class KnowledgeSelector:
 
         selections = self._parse_selections(
             raw_response.get("selections", []),
-            candidate_seeds=candidate_seeds,
+            knowledge_candidates=candidates,
         )
 
         logger.info(
-            "[KNOWLEDGE_SELECTION] selected_seed_ids=%s "
+            "[KNOWLEDGE_SELECTION] selected_request_ids=%s "
             "selected_information_types=%s selected_topics=%s selected_fields=%s",
-            [selection.seed_id for selection in selections],
+            [selection.request_id for selection in selections],
             [
                 selection.information_type_codes
                 for selection in selections
@@ -134,45 +140,52 @@ class KnowledgeSelector:
         cls,
         raw_selections,
         *,
-        candidate_seeds: list[KnowledgeDiscoveredSeed],
+        knowledge_candidates: list[KnowledgeDiscoveredSeed],
     ) -> list[KnowledgeSelection]:
 
         if not isinstance(raw_selections, list):
             return []
 
-        seeds_by_id = {
-            seed.seed_id: seed
-            for seed in candidate_seeds
+        candidates_by_id = {
+            candidate.seed_id: candidate
+            for candidate in knowledge_candidates
         }
         selections: list[KnowledgeSelection] = []
         for raw_selection in raw_selections:
             if not isinstance(raw_selection, dict):
                 continue
 
-            seed_id = raw_selection.get("seed_id")
-            if seed_id not in seeds_by_id:
+            request_id = (
+                raw_selection.get("request_id")
+                or raw_selection.get("seed_id")
+            )
+            if request_id is None:
                 continue
 
-            seed = seeds_by_id[str(seed_id)]
+            request_id = str(request_id)
+            if request_id not in candidates_by_id:
+                continue
+
+            candidate = candidates_by_id[request_id]
             information_type_codes = cls._validated_codes(
                 raw_selection.get("information_type_codes", []),
                 {
                     item.code
-                    for item in seed.available_information_types
+                    for item in candidate.available_information_types
                 },
             )
             topic_codes = cls._validated_codes(
                 raw_selection.get("topic_codes", []),
                 {
                     item.code
-                    for item in seed.available_topics
+                    for item in candidate.available_topics
                 },
             )
             field_codes = cls._validated_codes(
                 raw_selection.get("field_codes", []),
                 {
                     item.code
-                    for item in seed.available_fields
+                    for item in candidate.available_fields
                 },
             )
             if (
@@ -188,7 +201,7 @@ class KnowledgeSelector:
 
             selections.append(
                 KnowledgeSelection(
-                    seed_id=str(seed_id),
+                    request_id=str(request_id),
                     information_type_codes=information_type_codes,
                     topic_codes=topic_codes,
                     field_codes=field_codes,
@@ -221,21 +234,21 @@ class KnowledgeSelector:
         cls,
         *,
         question: str,
-        candidate_seeds: list[KnowledgeDiscoveredSeed],
+        knowledge_candidates: list[KnowledgeDiscoveredSeed],
     ) -> str:
 
         return json.dumps(
             {
                 "question": question,
-                "candidate_seeds": [
-                    cls._seed_payload(seed)
-                    for seed in candidate_seeds
+                "knowledge_candidates": [
+                    cls._candidate_payload(candidate)
+                    for candidate in knowledge_candidates
                 ],
                 "response_contract": {
                     "selections": {
                         "type": "array",
                         "item": {
-                            "seed_id": "string from candidate_seeds",
+                            "request_id": "string from knowledge_candidates",
                             "information_type_codes": (
                                 "array of available information type codes"
                             ),
@@ -255,48 +268,54 @@ class KnowledgeSelector:
         )
 
     @classmethod
-    def _seed_payload(
+    def _candidate_payload(
         cls,
-        seed: KnowledgeDiscoveredSeed,
+        candidate: KnowledgeDiscoveredSeed,
     ) -> dict:
 
         return {
-            "seed_id": seed.seed_id,
+            "request_id": candidate.seed_id,
+            "need": candidate.need,
+            "original_seeds": candidate.original_seeds,
             "matched_entry_points": {
                 "objects": [
                     cls._object_payload(item)
-                    for item in seed.matched_entry_points.objects
+                    for item in candidate.matched_entry_points.objects
                 ],
                 "information_types": [
                     cls._code_payload(item)
                     for item in (
-                        seed
+                        candidate
                         .matched_entry_points
                         .information_types
                     )
                 ],
                 "topics": [
                     cls._code_payload(item)
-                    for item in seed.matched_entry_points.topics
+                    for item in candidate.matched_entry_points.topics
+                ],
+                "fields": [
+                    cls._code_payload(item)
+                    for item in candidate.matched_entry_points.fields
                 ],
             },
             "available_objects": [
                 cls._object_payload(item)
-                for item in seed.available_objects
+                for item in candidate.available_objects
             ],
             "available_information_types": [
                 cls._code_payload(item)
-                for item in seed.available_information_types
+                for item in candidate.available_information_types
             ],
             "available_topics": [
                 cls._code_payload(item)
-                for item in seed.available_topics
+                for item in candidate.available_topics
             ],
             "available_fields": [
                 cls._code_payload(item)
-                for item in seed.available_fields
+                for item in candidate.available_fields
             ],
-            "constraints": seed.constraints,
+            "constraints": candidate.constraints,
         }
 
     @staticmethod

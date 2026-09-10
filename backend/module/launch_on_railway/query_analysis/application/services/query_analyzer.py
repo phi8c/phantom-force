@@ -9,8 +9,8 @@ from module.launch_on_railway.query_analysis.application.dtos.request.query_anal
     QueryAnalysisRequest,
 )
 from module.launch_on_railway.query_analysis.application.dtos.response.query_analysis_result import (
+    KnowledgeRequest,
     QueryAnalysisResult,
-    QuerySeed,
 )
 from module.launch_on_railway.query_analysis.application.enums.query_analysis_enums import (
     QueryAnalysisModelCode,
@@ -20,7 +20,14 @@ from module.launch_on_railway.query_analysis.application.enums.query_analysis_en
 
 
 logger = logging.getLogger(__name__)
-MAX_QUERY_SEEDS = 15
+MAX_KNOWLEDGE_REQUESTS = 5
+MAX_DOCUMENT_TYPE_SEEDS = 3
+MAX_HEAD_SEEDS = 3
+MAX_TOPIC_SEEDS = 4
+MAX_OBJECT_SEEDS = 4
+MAX_IDENTIFIER_SEEDS = 3
+MAX_INFORMATION_TYPE_SEEDS = 4
+MAX_INFORMATION_FIELD_SEEDS = 4
 
 
 class QueryAnalyzer:
@@ -99,27 +106,48 @@ class QueryAnalyzer:
                 "Query analysis response must be a JSON object"
             )
 
-        seeds = self._parse_seeds(
-            result.get("seeds", []),
+        knowledge_requests = self._parse_knowledge_requests(
+            result.get("knowledge_requests", []),
         )
 
         logger.info(
-            "[QUERY_ANALYSIS] question=%s intent=%s candidate_seed_count=%s candidate_seeds=%s",
+            "[QUERY_ANALYSIS] question=%s intent=%s knowledge_request_count=%s knowledge_requests=%s",
             request.question,
             result.get("intent", ""),
-            len(seeds),
+            len(knowledge_requests),
             [
                 {
-                    "object_code": seed.object_code,
-                    "identifier_code": seed.identifier_code,
-                    "information_type_code": (
-                        seed.information_type_code
+                    "need": item.need,
+                    "document_type_seed_count": len(
+                        item.document_type_seeds,
                     ),
-                    "topic_codes": seed.topic_codes,
-                    "constraints": seed.constraints,
-                    "confidence": seed.confidence,
+                    "head_seed_count": len(item.head_seeds),
+                    "topic_seed_count": len(item.topic_seeds),
+                    "object_seed_count": len(item.object_seeds),
+                    "identifier_seed_count": len(
+                        item.identifier_seeds,
+                    ),
+                    "information_type_seed_count": len(
+                        item.information_type_seeds,
+                    ),
+                    "information_field_seed_count": len(
+                        item.information_field_seeds,
+                    ),
+                    "document_type_seeds": item.document_type_seeds,
+                    "head_seeds": item.head_seeds,
+                    "topic_seeds": item.topic_seeds,
+                    "object_seeds": item.object_seeds,
+                    "identifier_seeds": item.identifier_seeds,
+                    "information_type_seeds": (
+                        item.information_type_seeds
+                    ),
+                    "information_field_seeds": (
+                        item.information_field_seeds
+                    ),
+                    "constraints": item.constraints,
+                    "confidence": item.confidence,
                 }
-                for seed in seeds
+                for item in knowledge_requests
             ],
         )
         logger.info(
@@ -129,83 +157,138 @@ class QueryAnalyzer:
 
         return QueryAnalysisResult(
             intent=result.get("intent", ""),
-            seeds=seeds,
+            knowledge_requests=knowledge_requests,
             raw_response=result,
         )
 
-    @staticmethod
-    def _parse_seeds(
-        raw_seeds,
-    ) -> list[QuerySeed]:
+    @classmethod
+    def _parse_knowledge_requests(
+        cls,
+        raw_requests,
+    ) -> list[KnowledgeRequest]:
 
-        if not isinstance(raw_seeds, list):
+        if not isinstance(raw_requests, list):
             return []
 
-        seeds: list[QuerySeed] = []
-        for raw_seed in raw_seeds:
-            if not isinstance(raw_seed, dict):
+        knowledge_requests: list[KnowledgeRequest] = []
+        for raw_item in raw_requests:
+            if not isinstance(raw_item, dict):
                 continue
 
-            topic_codes = raw_seed.get("topic_codes", [])
-            if not isinstance(topic_codes, list):
-                topic_codes = []
+            need = cls._optional_non_empty_str(
+                raw_item.get("need"),
+            )
+            if need is None:
+                continue
 
-            constraints = raw_seed.get("constraints", {})
+            constraints = raw_item.get("constraints", {})
             if not isinstance(constraints, dict):
                 constraints = {}
 
-            confidence = raw_seed.get("confidence")
-            if confidence is not None:
-                try:
-                    confidence = float(confidence)
-                except (TypeError, ValueError):
-                    confidence = None
-
-            object_code = QueryAnalyzer._optional_str(
-                raw_seed.get("object_code"),
+            knowledge_request = KnowledgeRequest(
+                need=need,
+                document_type_seeds=cls._seed_list(
+                    raw_item.get("document_type_seeds", []),
+                    max_items=MAX_DOCUMENT_TYPE_SEEDS,
+                ),
+                head_seeds=cls._seed_list(
+                    raw_item.get("head_seeds", []),
+                    max_items=MAX_HEAD_SEEDS,
+                ),
+                topic_seeds=cls._seed_list(
+                    raw_item.get("topic_seeds", []),
+                    max_items=MAX_TOPIC_SEEDS,
+                ),
+                object_seeds=cls._seed_list(
+                    raw_item.get("object_seeds", []),
+                    max_items=MAX_OBJECT_SEEDS,
+                ),
+                identifier_seeds=cls._seed_list(
+                    raw_item.get("identifier_seeds", []),
+                    max_items=MAX_IDENTIFIER_SEEDS,
+                ),
+                information_type_seeds=cls._seed_list(
+                    raw_item.get("information_type_seeds", []),
+                    max_items=MAX_INFORMATION_TYPE_SEEDS,
+                ),
+                information_field_seeds=cls._seed_list(
+                    raw_item.get("information_field_seeds", []),
+                    max_items=MAX_INFORMATION_FIELD_SEEDS,
+                ),
+                constraints=constraints,
+                confidence=cls._confidence(
+                    raw_item.get("confidence"),
+                ),
             )
-            information_type_code = QueryAnalyzer._optional_str(
-                raw_seed.get("information_type_code"),
-            )
-            topic_codes = [
-                str(topic_code)
-                for topic_code in topic_codes
-                if topic_code is not None
-            ]
 
-            if (
-                object_code is None
-                and information_type_code is None
-                and not topic_codes
-            ):
-                continue
-            identifier_code = QueryAnalyzer._optional_str(
-                raw_seed.get("identifier_code"),
-            )
-            if object_code is None:
-                identifier_code = None
-
-            seeds.append(
-                QuerySeed(
-                    object_code=object_code,
-                    identifier_code=identifier_code,
-                    information_type_code=information_type_code,
-                    topic_codes=topic_codes,
-                    constraints=constraints,
-                    confidence=confidence,
+            if not cls._has_semantic_seed(knowledge_request):
+                logger.warning(
+                    "[QUERY_ANALYSIS] knowledge_request_without_semantic_seed need=%s",
+                    knowledge_request.need,
                 )
-            )
 
-        return seeds[:MAX_QUERY_SEEDS]
+            knowledge_requests.append(knowledge_request)
+
+        return knowledge_requests[:MAX_KNOWLEDGE_REQUESTS]
 
     @staticmethod
-    def _optional_str(
+    def _seed_list(
+        value,
+        *,
+        max_items: int,
+    ) -> list[str]:
+
+        if not isinstance(value, list):
+            return []
+
+        result = []
+        seen = set()
+        for item in value:
+            text = QueryAnalyzer._optional_non_empty_str(item)
+            if text is None or text in seen:
+                continue
+            seen.add(text)
+            result.append(text)
+            if len(result) >= max_items:
+                break
+        return result
+
+    @staticmethod
+    def _confidence(value) -> float | None:
+
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _has_semantic_seed(
+        knowledge_request: KnowledgeRequest,
+    ) -> bool:
+
+        return any(
+            (
+                knowledge_request.document_type_seeds,
+                knowledge_request.head_seeds,
+                knowledge_request.topic_seeds,
+                knowledge_request.object_seeds,
+                knowledge_request.identifier_seeds,
+                knowledge_request.information_type_seeds,
+                knowledge_request.information_field_seeds,
+            )
+        )
+
+    @staticmethod
+    def _optional_non_empty_str(
         value,
     ) -> str | None:
 
         if value is None:
             return None
-        return str(value)
+        text = str(value).strip()
+        return text or None
 
     @staticmethod
     def _build_user_prompt(
@@ -217,17 +300,35 @@ class QueryAnalyzer:
                 "question": request.question,
                 "response_contract": {
                     "intent": "string",
-                    "seeds": {
+                    "knowledge_requests": {
                         "type": "array",
+                        "max_items": MAX_KNOWLEDGE_REQUESTS,
                         "item": {
-                            "object_code": "string or null",
-                            "identifier_code": "string or null",
-                            "information_type_code": "string or null",
-                            "topic_codes": "array of strings",
+                            "need": "string",
+                            "document_type_seeds": (
+                                "array of strings, max 3"
+                            ),
+                            "head_seeds": (
+                                "array of strings, max 3"
+                            ),
+                            "topic_seeds": (
+                                "array of strings, max 4"
+                            ),
+                            "object_seeds": (
+                                "array of strings, max 4"
+                            ),
+                            "identifier_seeds": (
+                                "array of strings, max 3"
+                            ),
+                            "information_type_seeds": (
+                                "array of strings, max 4"
+                            ),
+                            "information_field_seeds": (
+                                "array of strings, max 4"
+                            ),
                             "constraints": "object",
                             "confidence": "number from 0 to 1 or null",
                         },
-                        "max_items": MAX_QUERY_SEEDS,
                     },
                 },
             },

@@ -101,9 +101,9 @@ class KnowledgeReader:
     ) -> KnowledgeDiscoveryResult:
 
         logger.info(
-            "[KNOWLEDGE_DISCOVERY] start space=%s seed_count=%s",
+            "[KNOWLEDGE_DISCOVERY] start space=%s request_count=%s",
             request.knowledge_space_id,
-            len(request.seeds),
+            len(request.items),
         )
 
         seed_vectors = await self._embed_seed_strings(
@@ -114,16 +114,31 @@ class KnowledgeReader:
             knowledge_space_id=request.knowledge_space_id,
             seeds=[
                 {
-                    "seed_id": seed.seed_id,
-                    "object_code": seed.object_code,
-                    "identifier_code": seed.identifier_code,
-                    "information_type_code": (
-                        seed.information_type_code
+                    "seed_id": item.request_id,
+                    "request_id": item.request_id,
+                    "need": item.need,
+                    "document_type_seeds": (
+                        item.document_type_seeds
                     ),
-                    "topic_codes": seed.topic_codes,
-                    "constraints": seed.constraints,
+                    "head_seeds": item.head_seeds,
+                    "topic_seeds": item.topic_seeds,
+                    "object_seeds": item.object_seeds,
+                    "identifier_seeds": item.identifier_seeds,
+                    "information_type_seeds": (
+                        item.information_type_seeds
+                    ),
+                    "information_field_seeds": (
+                        item.information_field_seeds
+                    ),
+                    "object_code": item.object_code,
+                    "identifier_code": item.identifier_code,
+                    "information_type_code": (
+                        item.information_type_code
+                    ),
+                    "topic_codes": item.topic_codes,
+                    "constraints": item.constraints,
                 }
-                for seed in request.seeds
+                for item in request.items
             ],
             seed_vectors=seed_vectors,
         )
@@ -133,27 +148,35 @@ class KnowledgeReader:
             for record in records
         ]
         requested_by_id = {
-            seed.seed_id: seed
-            for seed in request.seeds
+            item.request_id: item
+            for item in request.items
         }
 
         for seed in seeds:
             requested = requested_by_id.get(seed.seed_id)
             logger.info(
-                "[KNOWLEDGE_DISCOVERY] seed_id=%s "
-                "requested_entry_points=%s "
-                "matched_objects=%s matched_information_types=%s matched_topics=%s "
+                "[KNOWLEDGE_DISCOVERY] request_id=%s need=%s "
+                "requested_semantic_seeds=%s "
+                "matched_objects=%s matched_information_types=%s matched_topics=%s matched_fields=%s "
                 "available_information_type_count=%s available_topic_count=%s "
                 "available_field_count=%s",
                 seed.seed_id,
+                seed.need,
                 (
                     {
-                        "object_code": requested.object_code,
-                        "identifier_code": requested.identifier_code,
-                        "information_type_code": (
-                            requested.information_type_code
+                        "document_type_seeds": (
+                            requested.document_type_seeds
                         ),
-                        "topic_codes": requested.topic_codes,
+                        "head_seeds": requested.head_seeds,
+                        "topic_seeds": requested.topic_seeds,
+                        "object_seeds": requested.object_seeds,
+                        "identifier_seeds": requested.identifier_seeds,
+                        "information_type_seeds": (
+                            requested.information_type_seeds
+                        ),
+                        "information_field_seeds": (
+                            requested.information_field_seeds
+                        ),
                     }
                     if requested is not None
                     else {}
@@ -174,6 +197,10 @@ class KnowledgeReader:
                 [
                     item.code
                     for item in seed.matched_entry_points.topics
+                ],
+                [
+                    item.code
+                    for item in seed.matched_entry_points.fields
                 ],
                 len(seed.available_information_types),
                 len(seed.available_topics),
@@ -240,15 +267,13 @@ class KnowledgeReader:
 
         started_at = perf_counter()
         texts = []
-        for seed in request.seeds:
-            for text in (
-                seed.object_code,
-                seed.identifier_code,
-                seed.information_type_code,
-            ):
-                if text:
-                    texts.append(text)
-            texts.extend(seed.topic_codes)
+        for item in request.items:
+            texts.extend(item.document_type_seeds)
+            texts.extend(item.topic_seeds)
+            texts.extend(item.object_seeds)
+            texts.extend(item.identifier_seeds)
+            texts.extend(item.information_type_seeds)
+            texts.extend(item.information_field_seeds)
 
         unique_texts = list(dict.fromkeys(texts))
         if not unique_texts:
@@ -282,30 +307,47 @@ class KnowledgeReader:
 
         return [
             KnowledgeSemanticSeedVectors(
-                seed_id=seed.seed_id,
-                object_vector=(
-                    vector_by_text.get(seed.object_code)
-                    if seed.object_code
-                    else None
-                ),
-                identifier_vector=(
-                    vector_by_text.get(seed.identifier_code)
-                    if seed.identifier_code
-                    else None
-                ),
-                information_type_vector=(
-                    vector_by_text.get(seed.information_type_code)
-                    if seed.information_type_code
-                    else None
+                seed_id=item.request_id,
+                document_type_vectors=self._vectors_for_texts(
+                    item.document_type_seeds,
+                    vector_by_text,
                 ),
                 topic_vectors={
                     topic_code: vector_by_text[topic_code]
-                    for topic_code in seed.topic_codes
+                    for topic_code in item.topic_seeds
                     if topic_code in vector_by_text
                 },
+                object_vectors=self._vectors_for_texts(
+                    item.object_seeds,
+                    vector_by_text,
+                ),
+                identifier_vectors=self._vectors_for_texts(
+                    item.identifier_seeds,
+                    vector_by_text,
+                ),
+                information_type_vectors=self._vectors_for_texts(
+                    item.information_type_seeds,
+                    vector_by_text,
+                ),
+                information_field_vectors=self._vectors_for_texts(
+                    item.information_field_seeds,
+                    vector_by_text,
+                ),
             )
-            for seed in request.seeds
+            for item in request.items
         ]
+
+    @staticmethod
+    def _vectors_for_texts(
+        texts: list[str],
+        vector_by_text: dict[str, list[float]],
+    ) -> dict[str, list[float]]:
+
+        return {
+            text: vector_by_text[text]
+            for text in texts
+            if text in vector_by_text
+        }
 
     @classmethod
     def _discovered_seed(cls, record) -> KnowledgeDiscoveredSeed:
@@ -329,7 +371,13 @@ class KnowledgeReader:
                     cls._code_structure(item)
                     for item in record.matched_entry_points.topics
                 ],
+                fields=[
+                    cls._code_structure(item)
+                    for item in record.matched_entry_points.fields
+                ],
             ),
+            need=getattr(record, "need", ""),
+            original_seeds=getattr(record, "original_seeds", {}),
             available_objects=[
                 cls._object_structure(item)
                 for item in record.available_objects
@@ -395,7 +443,13 @@ class KnowledgeReader:
                     cls._code_structure_record(item)
                     for item in seed.matched_entry_points.topics
                 ],
+                fields=[
+                    cls._code_structure_record(item)
+                    for item in seed.matched_entry_points.fields
+                ],
             ),
+            need=seed.need,
+            original_seeds=seed.original_seeds,
             available_objects=[
                 cls._object_structure_record(item)
                 for item in seed.available_objects

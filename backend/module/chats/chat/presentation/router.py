@@ -52,7 +52,7 @@ class ChatHttpRequest(BaseModel):
 class ChatHttpResponse(BaseModel):
     answer: str
     intent: str | None = None
-    seeds: list[dict]
+    knowledge_requests: list[dict]
     information: list[dict]
 
 
@@ -129,6 +129,6 @@ async def chat(
     return ChatHttpResponse(
         answer=result.answer,
         intent=result.intent,
-        seeds=result.seeds,
+        knowledge_requests=result.knowledge_requests,
         information=result.information,
     )

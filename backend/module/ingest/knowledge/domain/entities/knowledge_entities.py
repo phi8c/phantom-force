@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -121,14 +122,25 @@ class KnowledgeMatchedEntryPointsRecord:
     objects: list[KnowledgeObjectStructureRecord]
     information_types: list[KnowledgeCodeStructureRecord]
     topics: list[KnowledgeCodeStructureRecord]
+    fields: list[KnowledgeCodeStructureRecord] = field(default_factory=list)
 
 
 @dataclass
 class KnowledgeDiscoveredSeedRecord:
     seed_id: str
     matched_entry_points: KnowledgeMatchedEntryPointsRecord
-    available_objects: list[KnowledgeObjectStructureRecord]
-    available_information_types: list[KnowledgeCodeStructureRecord]
-    available_topics: list[KnowledgeCodeStructureRecord]
-    available_fields: list[KnowledgeCodeStructureRecord]
-    constraints: dict[str, Any]
+    need: str = ""
+    original_seeds: dict[str, list[str]] | None = None
+    available_objects: list[KnowledgeObjectStructureRecord] = field(
+        default_factory=list,
+    )
+    available_information_types: list[KnowledgeCodeStructureRecord] = field(
+        default_factory=list,
+    )
+    available_topics: list[KnowledgeCodeStructureRecord] = field(
+        default_factory=list,
+    )
+    available_fields: list[KnowledgeCodeStructureRecord] = field(
+        default_factory=list,
+    )
+    constraints: dict[str, Any] = field(default_factory=dict)
