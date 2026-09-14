@@ -22,6 +22,9 @@ from module.ingest.chunking.infrastructure.persistence.sqlalchemy_unit_of_work i
 from module.ingest.chunking.infrastructure.engine.chunking_engine_resolver import (
     DbChunkingEngineResolver,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 
 def create_chunk_document_use_case(
@@ -53,6 +56,11 @@ def create_chunk_document_use_case(
         ),
         downstream_task_scheduler=(
             downstream_task_scheduler
+        ),
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
+            )
         ),
         uow=uow,
         max_attempts=max_attempts,

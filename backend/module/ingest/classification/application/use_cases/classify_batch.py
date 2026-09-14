@@ -42,6 +42,13 @@ from module.ingest.classification.domain.entities.chunk_classification import (
 from module.ingest.classification.domain.enums.task_status import (
     TaskStatus,
 )
+from module.ingest.orchestration.application.services import (
+    NoOpOrchestrationProgressService,
+)
+from module.ingest.orchestration.application.services import (
+    OrchestrationProgressService,
+)
+from module.ingest.orchestration.domain.enums import IngestionStage
 
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,11 @@ class ClassifyBatchUseCase:
         knowledge_writer: KnowledgeWriter,
         ingestion_config_service: IngestionConfigService,
         uow: UnitOfWork,
+        orchestration_progress_service: (
+            OrchestrationProgressService
+            | NoOpOrchestrationProgressService
+            | None
+        ) = None,
         max_attempts: int = 3,
     ):
         self.task_repository = task_repository
@@ -76,6 +88,10 @@ class ClassifyBatchUseCase:
         self.knowledge_writer = knowledge_writer
         self.ingestion_config_service = (
             ingestion_config_service
+        )
+        self.orchestration_progress_service = (
+            orchestration_progress_service
+            or NoOpOrchestrationProgressService()
         )
         self.uow = uow
         self.max_attempts = max_attempts
@@ -274,6 +290,17 @@ class ClassifyBatchUseCase:
                 task,
             )
 
+            await (
+                self.orchestration_progress_service
+                .mark_stage_completed(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    stage=IngestionStage.CLASSIFICATION,
+                )
+            )
+
             logger.info(
                 "classification commit task_id=%s",
                 task_id,
@@ -317,6 +344,36 @@ class ClassifyBatchUseCase:
                 await self.task_repository.update(
                     task,
                 )
+
+                if task.status == TaskStatus.FAILED:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_failed(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=(
+                                IngestionStage
+                                .CLASSIFICATION
+                            ),
+                            error=str(exc),
+                        )
+                    )
+                else:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_ready(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=(
+                                IngestionStage
+                                .CLASSIFICATION
+                            ),
+                        )
+                    )
 
                 await self.uow.commit()
 
@@ -582,6 +639,15 @@ class ClassifyBatchUseCase:
             .complete_classification(
                 ingestion_job_id=task.ingestion_job_id,
                 batch_id=task.batch_id,
+            )
+        )
+
+        await (
+            self.orchestration_progress_service
+            .mark_stage_skipped(
+                ingestion_job_id=task.ingestion_job_id,
+                document_id=task.document_id,
+                stage=IngestionStage.CLASSIFICATION,
             )
         )
 

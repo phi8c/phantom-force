@@ -1,0 +1,6 @@
+{
+  "name": "StreamForge OrchestraFlow",
+  "description": "Data stream and DAG orchestration dashboard featuring active ingestion graph, real-time batch execution stream, and node diagnostics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

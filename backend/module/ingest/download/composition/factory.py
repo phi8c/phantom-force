@@ -22,6 +22,9 @@ from module.ingest.download.infrastructure.persistence.sqlalchemy_unit_of_work i
 from module.ingest.download.domain.contracts.extraction_task_scheduler import (
     ExtractionTaskScheduler,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 
 def create_download_file_use_case(
@@ -55,6 +58,11 @@ def create_download_file_use_case(
             storage_asset_repository
         ),
         extraction_task_scheduler=extraction_task_scheduler,
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
+            )
+        ),
         uow=uow,
         max_attempts=max_attempts,
     )

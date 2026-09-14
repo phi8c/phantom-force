@@ -49,3 +49,47 @@ class KnowledgeSpaceDataHubRepositoryImpl(
         return KnowledgeSpaceDataHubMapper.to_entity(
             model,
         )
+
+    async def upsert(
+        self,
+        config: KnowledgeSpaceDataHub,
+    ) -> KnowledgeSpaceDataHub:
+
+        result = await self.session.execute(
+            select(
+                KnowledgeSpaceDataHubModel,
+            ).where(
+                KnowledgeSpaceDataHubModel.knowledge_space_id
+                == config.knowledge_space_id,
+            )
+        )
+
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            model = KnowledgeSpaceDataHubModel(
+                knowledge_space_id=config.knowledge_space_id,
+                data_hub_provider_id=(
+                    config.data_hub_provider_id
+                ),
+                configuration=config.configuration,
+                enabled=config.enabled,
+            )
+            self.session.add(
+                model,
+            )
+        else:
+            model.data_hub_provider_id = (
+                config.data_hub_provider_id
+            )
+            model.configuration = config.configuration
+            model.enabled = config.enabled
+
+        await self.session.flush()
+        await self.session.refresh(
+            model,
+        )
+
+        return KnowledgeSpaceDataHubMapper.to_entity(
+            model,
+        )

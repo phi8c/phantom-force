@@ -1,0 +1,413 @@
+-- =========================================================
+-- ORCHESTRATION TABLES
+-- =========================================================
+
+
+-- =========================================================
+-- 1. ingestion_batches
+--
+-- Một record = một batch/page được Discovery lấy ra.
+-- Batch này sẽ tiếp tục được theo dõi xuyên suốt pipeline.
+-- =========================================================
+
+CREATE TABLE public.ingestion_batches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+
+    ingestion_job_id uuid NOT NULL,
+    batch_index integer NOT NULL,
+
+    status character varying(50)
+        DEFAULT 'PROCESSING'::character varying
+        NOT NULL,
+
+    total_files integer DEFAULT 0 NOT NULL,
+    completed_files integer DEFAULT 0 NOT NULL,
+    failed_files integer DEFAULT 0 NOT NULL,
+
+    discovery_completed_at timestamp with time zone,
+    completed_at timestamp with time zone,
+
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+
+    CONSTRAINT pk_ingestion_batches
+        PRIMARY KEY (id),
+
+    CONSTRAINT fk_ingestion_batches_job
+        FOREIGN KEY (ingestion_job_id)
+        REFERENCES public.ingestion_jobs(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_ingestion_batches_job_index
+        UNIQUE (ingestion_job_id, batch_index),
+
+    -- dùng cho composite FK ở các bảng phía dưới
+    CONSTRAINT uq_ingestion_batches_id_job
+        UNIQUE (id, ingestion_job_id),
+
+    CONSTRAINT ck_ingestion_batches_batch_index
+        CHECK (batch_index > 0),
+
+    CONSTRAINT ck_ingestion_batches_total_files
+        CHECK (total_files >= 0),
+
+    CONSTRAINT ck_ingestion_batches_completed_files
+        CHECK (completed_files >= 0),
+
+    CONSTRAINT ck_ingestion_batches_failed_files
+        CHECK (failed_files >= 0),
+
+    CONSTRAINT ck_ingestion_batches_file_counts
+        CHECK (
+            completed_files + failed_files <= total_files
+        ),
+
+    CONSTRAINT ck_ingestion_batches_status
+        CHECK (
+            status::text = ANY (
+                ARRAY[
+                    'DISCOVERING'::character varying,
+                    'PROCESSING'::character varying,
+                    'COMPLETED'::character varying,
+                    'COMPLETED_WITH_ERRORS'::character varying,
+                    'FAILED'::character varying
+                ]::text[]
+            )
+        )
+);
+
+CREATE INDEX ix_ingestion_batches_job
+    ON public.ingestion_batches
+    USING btree (ingestion_job_id);
+
+CREATE INDEX ix_ingestion_batches_job_status
+    ON public.ingestion_batches
+    USING btree (ingestion_job_id, status);
+
+CREATE INDEX ix_ingestion_batches_created_at
+    ON public.ingestion_batches
+    USING btree (created_at);
+
+
+
+-- =========================================================
+-- 2. ingestion_batch_documents
+--
+-- Xác định chính xác Batch nào chứa Document/File nào.
+--
+-- Không duplicate file_name/path/size...
+-- Các thông tin đó lấy từ documents bằng document_id.
+-- =========================================================
+
+CREATE TABLE public.ingestion_batch_documents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+
+    ingestion_batch_id uuid NOT NULL,
+    ingestion_job_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+
+    -- thứ tự file trong page mà Discovery trả về
+    ordinal integer,
+
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+
+    CONSTRAINT pk_ingestion_batch_documents
+        PRIMARY KEY (id),
+
+    CONSTRAINT fk_ingestion_batch_documents_batch_job
+        FOREIGN KEY (
+            ingestion_batch_id,
+            ingestion_job_id
+        )
+        REFERENCES public.ingestion_batches (
+            id,
+            ingestion_job_id
+        )
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_ingestion_batch_documents_job
+        FOREIGN KEY (ingestion_job_id)
+        REFERENCES public.ingestion_jobs(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_ingestion_batch_documents_document
+        FOREIGN KEY (document_id)
+        REFERENCES public.documents(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_ingestion_batch_documents_batch_document
+        UNIQUE (
+            ingestion_batch_id,
+            document_id
+        ),
+
+    -- Một document chỉ thuộc một Discovery batch
+    -- trong cùng một ingestion job.
+    -- Giúp chống duplicate khi Discovery retry/redelivery.
+    CONSTRAINT uq_ingestion_batch_documents_job_document
+        UNIQUE (
+            ingestion_job_id,
+            document_id
+        ),
+
+    -- phục vụ FK stage -> đúng document của đúng batch
+    CONSTRAINT uq_ingestion_batch_documents_membership
+        UNIQUE (
+            ingestion_batch_id,
+            ingestion_job_id,
+            document_id
+        ),
+
+    CONSTRAINT ck_ingestion_batch_documents_ordinal
+        CHECK (
+            ordinal IS NULL
+            OR ordinal >= 0
+        )
+);
+
+CREATE INDEX ix_ingestion_batch_documents_batch
+    ON public.ingestion_batch_documents
+    USING btree (ingestion_batch_id);
+
+CREATE INDEX ix_ingestion_batch_documents_job
+    ON public.ingestion_batch_documents
+    USING btree (ingestion_job_id);
+
+CREATE INDEX ix_ingestion_batch_documents_document
+    ON public.ingestion_batch_documents
+    USING btree (document_id);
+
+
+
+-- =========================================================
+-- 3. ingestion_document_stage_states
+--
+-- Read model / projection cho UI workflow.
+--
+-- Một document có một record cho mỗi stage.
+--
+-- Ví dụ:
+-- A.pdf / DOWNLOAD       / COMPLETED
+-- A.pdf / EXTRACTION     / PROCESSING
+-- A.pdf / CHUNKING       / PENDING
+-- =========================================================
+
+CREATE TABLE public.ingestion_document_stage_states (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+
+    ingestion_job_id uuid NOT NULL,
+    ingestion_batch_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+
+    stage character varying(50) NOT NULL,
+
+    status character varying(50)
+        DEFAULT 'PENDING'::character varying
+        NOT NULL,
+
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+
+    error text,
+
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+
+    CONSTRAINT pk_ingestion_document_stage_states
+        PRIMARY KEY (id),
+
+    -- Đảm bảo document thực sự thuộc batch này.
+    CONSTRAINT fk_ingestion_document_stage_states_membership
+        FOREIGN KEY (
+            ingestion_batch_id,
+            ingestion_job_id,
+            document_id
+        )
+        REFERENCES public.ingestion_batch_documents (
+            ingestion_batch_id,
+            ingestion_job_id,
+            document_id
+        )
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_ingestion_document_stage_states_job_document_stage
+        UNIQUE (
+            ingestion_job_id,
+            document_id,
+            stage
+        ),
+
+    CONSTRAINT ck_ingestion_document_stage_states_stage
+        CHECK (
+            stage::text = ANY (
+                ARRAY[
+                    'DISCOVERY'::character varying,
+                    'DOWNLOAD'::character varying,
+                    'EXTRACTION'::character varying,
+                    'CHUNKING'::character varying,
+                    'EMBEDDING'::character varying,
+                    'CLASSIFICATION'::character varying,
+                    'INDEXING'::character varying
+                ]::text[]
+            )
+        ),
+
+    CONSTRAINT ck_ingestion_document_stage_states_status
+        CHECK (
+            status::text = ANY (
+                ARRAY[
+                    'PENDING'::character varying,
+                    'READY'::character varying,
+                    'PROCESSING'::character varying,
+                    'COMPLETED'::character varying,
+                    'FAILED'::character varying,
+                    'SKIPPED'::character varying
+                ]::text[]
+            )
+        )
+);
+
+CREATE INDEX ix_ingestion_document_stage_states_batch
+    ON public.ingestion_document_stage_states
+    USING btree (ingestion_batch_id);
+
+CREATE INDEX ix_ingestion_document_stage_states_job
+    ON public.ingestion_document_stage_states
+    USING btree (ingestion_job_id);
+
+CREATE INDEX ix_ingestion_document_stage_states_document
+    ON public.ingestion_document_stage_states
+    USING btree (document_id);
+
+CREATE INDEX ix_ingestion_document_stage_states_batch_stage_status
+    ON public.ingestion_document_stage_states
+    USING btree (
+        ingestion_batch_id,
+        stage,
+        status
+    );
+
+CREATE INDEX ix_ingestion_document_stage_states_job_stage_status
+    ON public.ingestion_document_stage_states
+    USING btree (
+        ingestion_job_id,
+        stage,
+        status
+    );
+
+
+
+-- =========================================================
+-- 4. ingestion_orchestration_events
+--
+-- Append-only event history.
+--
+-- Dùng cho:
+-- - SSE realtime
+-- - reconnect/replay
+-- - audit/debug
+-- - timeline
+--
+-- sequence_no là cursor tăng dần cho SSE:
+--
+-- GET .../events?after=15230
+-- =========================================================
+
+CREATE TABLE public.ingestion_orchestration_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+
+    sequence_no bigint
+        GENERATED ALWAYS AS IDENTITY
+        NOT NULL,
+
+    ingestion_job_id uuid NOT NULL,
+
+    ingestion_batch_id uuid,
+    document_id uuid,
+
+    event_type character varying(100) NOT NULL,
+
+    stage character varying(50),
+    status character varying(50),
+
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+
+    CONSTRAINT pk_ingestion_orchestration_events
+        PRIMARY KEY (id),
+
+    CONSTRAINT uq_ingestion_orchestration_events_sequence
+        UNIQUE (sequence_no),
+
+    CONSTRAINT fk_ingestion_orchestration_events_job
+        FOREIGN KEY (ingestion_job_id)
+        REFERENCES public.ingestion_jobs(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_ingestion_orchestration_events_batch
+        FOREIGN KEY (ingestion_batch_id)
+        REFERENCES public.ingestion_batches(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_ingestion_orchestration_events_document
+        FOREIGN KEY (document_id)
+        REFERENCES public.documents(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT ck_ingestion_orchestration_events_stage
+        CHECK (
+            stage IS NULL
+            OR stage::text = ANY (
+                ARRAY[
+                    'DISCOVERY'::character varying,
+                    'DOWNLOAD'::character varying,
+                    'EXTRACTION'::character varying,
+                    'CHUNKING'::character varying,
+                    'EMBEDDING'::character varying,
+                    'CLASSIFICATION'::character varying,
+                    'INDEXING'::character varying
+                ]::text[]
+            )
+        ),
+
+    CONSTRAINT ck_ingestion_orchestration_events_status
+        CHECK (
+            status IS NULL
+            OR status::text = ANY (
+                ARRAY[
+                    'PENDING'::character varying,
+                    'READY'::character varying,
+                    'PROCESSING'::character varying,
+                    'COMPLETED'::character varying,
+                    'FAILED'::character varying,
+                    'SKIPPED'::character varying
+                ]::text[]
+            )
+        )
+);
+
+CREATE INDEX ix_ingestion_orchestration_events_job_sequence
+    ON public.ingestion_orchestration_events
+    USING btree (
+        ingestion_job_id,
+        sequence_no
+    );
+
+CREATE INDEX ix_ingestion_orchestration_events_batch_sequence
+    ON public.ingestion_orchestration_events
+    USING btree (
+        ingestion_batch_id,
+        sequence_no
+    );
+
+CREATE INDEX ix_ingestion_orchestration_events_document_sequence
+    ON public.ingestion_orchestration_events
+    USING btree (
+        document_id,
+        sequence_no
+    );
+
+CREATE INDEX ix_ingestion_orchestration_events_created_at
+    ON public.ingestion_orchestration_events
+    USING btree (created_at);

@@ -6,6 +6,9 @@ from module.master_data.data_hub_providers.application.use_cases.get_data_hub_pr
 from module.master_data.data_hub_providers.application.use_cases.get_data_hub_provider_by_code import (
     GetDataHubProviderByCodeUseCase,
 )
+from module.master_data.data_hub_providers.application.use_cases.list_data_hub_providers import (
+    ListDataHubProvidersUseCase,
+)
 from module.master_data.data_hub_providers.domain.entities.data_hub_provider import (
     DataHubProvider,
 )
@@ -17,11 +20,13 @@ class DataHubProviderService:
         self,
         get_provider: GetDataHubProviderUseCase,
         get_provider_by_code: GetDataHubProviderByCodeUseCase,
+        list_providers: ListDataHubProvidersUseCase,
     ):
         self._get_provider = get_provider
         self._get_provider_by_code = (
             get_provider_by_code
         )
+        self._list_providers = list_providers
 
     async def get_by_id(
         self,
@@ -40,3 +45,9 @@ class DataHubProviderService:
         return await self._get_provider_by_code.execute(
             code,
         )
+
+    async def list_enabled(
+        self,
+    ) -> list[DataHubProvider]:
+
+        return await self._list_providers.execute()

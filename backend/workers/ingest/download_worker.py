@@ -12,6 +12,7 @@ from uuid import UUID
 from module.ingest.download.application.use_cases.download_file import (
     DownloadFileUseCase,
 )
+from module.ingest.orchestration.domain.enums import IngestionStage
 
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,11 @@ class DownloadWorker:
                     async with (
                         self.claim_scope_factory()
                     ) as claim_scope:
-                        task_repository, uow = claim_scope
+                        (
+                            task_repository,
+                            uow,
+                            progress_service,
+                        ) = claim_scope
 
                         tasks = (
                             await task_repository
@@ -121,6 +126,25 @@ class DownloadWorker:
                                 lease_until=lease_until,
                             )
                         )
+
+                        await uow.commit()
+
+                        for task in tasks:
+                            await (
+                                progress_service
+                                .mark_stage_processing(
+                                    ingestion_job_id=(
+                                        task.ingestion_job_id
+                                    ),
+                                    document_id=(
+                                        task.document_id
+                                    ),
+                                    stage=(
+                                        IngestionStage
+                                        .DOWNLOAD
+                                    ),
+                                )
+                            )
 
                         await uow.commit()
                         logger.info(

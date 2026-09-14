@@ -22,3 +22,9 @@ class EmbeddingModelRepository(ABC):
         code: str,
     ) -> EmbeddingModel | None:
         pass
+
+    @abstractmethod
+    async def list_enabled(
+        self,
+    ) -> list[EmbeddingModel]:
+        pass

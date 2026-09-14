@@ -30,6 +30,13 @@ from module.ingest.chunking.domain.contracts.unit_of_work import (
 from module.ingest.chunking.domain.enums.task_status import (
     TaskStatus,
 )
+from module.ingest.orchestration.application.services import (
+    NoOpOrchestrationProgressService,
+)
+from module.ingest.orchestration.application.services import (
+    OrchestrationProgressService,
+)
+from module.ingest.orchestration.domain.enums import IngestionStage
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +52,11 @@ class ChunkDocumentUseCase:
         chunk_batch_writer: ChunkBatchWriter,
         downstream_task_scheduler: DownstreamTaskScheduler,
         uow: UnitOfWork,
+        orchestration_progress_service: (
+            OrchestrationProgressService
+            | NoOpOrchestrationProgressService
+            | None
+        ) = None,
         max_attempts: int = 3,
     ):
         self.task_repository = task_repository
@@ -57,6 +69,10 @@ class ChunkDocumentUseCase:
         self.chunk_batch_writer = chunk_batch_writer
         self.downstream_task_scheduler = (
             downstream_task_scheduler
+        )
+        self.orchestration_progress_service = (
+            orchestration_progress_service
+            or NoOpOrchestrationProgressService()
         )
         self.uow = uow
         self.max_attempts = max_attempts
@@ -208,6 +224,51 @@ class ChunkDocumentUseCase:
                 task,
             )
 
+            await (
+                self.orchestration_progress_service
+                .mark_stage_completed(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    stage=IngestionStage.CHUNKING,
+                )
+            )
+
+            await (
+                self.orchestration_progress_service
+                .mark_stage_ready(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    stage=IngestionStage.EMBEDDING,
+                )
+            )
+
+            if signals.classification_skipped:
+                await (
+                    self.orchestration_progress_service
+                    .mark_stage_skipped(
+                        ingestion_job_id=(
+                            task.ingestion_job_id
+                        ),
+                        document_id=task.document_id,
+                        stage=IngestionStage.CLASSIFICATION,
+                    )
+                )
+            elif signals.dispatch_classification:
+                await (
+                    self.orchestration_progress_service
+                    .mark_stage_ready(
+                        ingestion_job_id=(
+                            task.ingestion_job_id
+                        ),
+                        document_id=task.document_id,
+                        stage=IngestionStage.CLASSIFICATION,
+                    )
+                )
+
             logger.info(
                 "chunking commit task_id=%s",
                 task_id,
@@ -266,6 +327,30 @@ class ChunkDocumentUseCase:
                 await self.task_repository.update(
                     task,
                 )
+
+                if task.status == TaskStatus.FAILED:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_failed(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=IngestionStage.CHUNKING,
+                            error=str(exc),
+                        )
+                    )
+                else:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_ready(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=IngestionStage.CHUNKING,
+                        )
+                    )
 
                 await self.uow.commit()
 

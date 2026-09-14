@@ -40,6 +40,9 @@ from module.ingest.knowledge.composition import (
 from module.prompt.composition import (
     create_prompt_provider,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 
 def create_classify_batch_use_case(
@@ -92,6 +95,11 @@ def create_classify_batch_use_case(
         ingestion_config_service=(
             create_ingestion_config_service(
                 session,
+            )
+        ),
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
             )
         ),
         uow=SQLAlchemyUnitOfWork(

@@ -25,6 +25,9 @@ from module.ingest.extraction.domain.contracts.source_asset_reader import (
 from module.ingest.extraction.infrastructure.persistence.repositories.storage_asset_repository import (
     ModuleStorageAssetRepository,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 
 def create_extract_document_use_case(
@@ -64,6 +67,11 @@ def create_extract_document_use_case(
         ),
         chunking_task_scheduler=(
             chunking_task_scheduler
+        ),
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
+            )
         ),
         uow=uow,
         max_attempts=max_attempts,

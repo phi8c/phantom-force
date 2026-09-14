@@ -23,6 +23,9 @@ from module.ingest.embedding.infrastructure.persistence.sqlalchemy_unit_of_work 
 from module.ingest.embedding.infrastructure.engine.embedding_engine_resolver import (
     DbEmbeddingEngineResolver,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 
 def create_embed_batch_use_case(
@@ -49,6 +52,11 @@ def create_embed_batch_use_case(
             )
         ),
         batch_finalizer=batch_finalizer,
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
+            )
+        ),
         uow=SQLAlchemyUnitOfWork(
             session=session,
         ),

@@ -8,6 +8,7 @@ from uuid import UUID
 class DownstreamSignals:
     dispatch_embedding: bool
     dispatch_classification: bool
+    classification_skipped: bool = False
 
 
 class DownstreamTaskScheduler(ABC):

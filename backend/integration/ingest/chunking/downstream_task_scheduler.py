@@ -81,6 +81,10 @@ class ModuleDownstreamTaskScheduler(
             dispatch_classification=(
                 classification_result.dispatch
             ),
+            classification_skipped=(
+                classification_result.mark_chunk_batch_completed
+                and not classification_result.dispatch
+            ),
         )
 
     async def dispatch_embedding(

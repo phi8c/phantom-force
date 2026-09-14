@@ -31,6 +31,9 @@ from module.ingest.extraction.infrastructure.persistence.repositories.extraction
 from module.ingest.extraction.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork as ExtractionUnitOfWork,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 
 from workers.ingest.chunking_worker import ChunkingWorker
 from workers.ingest.classification_worker import (
@@ -63,6 +66,9 @@ async def _download_claim_scope() -> AsyncIterator[tuple]:
                 DownloadUnitOfWork(
                     session=session,
                 ),
+                create_orchestration_progress_service(
+                    session=session,
+                ),
             )
         except Exception:
             await session.rollback()
@@ -78,6 +84,9 @@ async def _extraction_claim_scope() -> AsyncIterator[tuple]:
                     session=session,
                 ),
                 ExtractionUnitOfWork(
+                    session=session,
+                ),
+                create_orchestration_progress_service(
                     session=session,
                 ),
             )
@@ -97,6 +106,9 @@ async def _chunking_claim_scope() -> AsyncIterator[tuple]:
                 ChunkingUnitOfWork(
                     session=session,
                 ),
+                create_orchestration_progress_service(
+                    session=session,
+                ),
             )
         except Exception:
             await session.rollback()
@@ -114,6 +126,9 @@ async def _embedding_claim_scope() -> AsyncIterator[tuple]:
                 EmbeddingUnitOfWork(
                     session=session,
                 ),
+                create_orchestration_progress_service(
+                    session=session,
+                ),
             )
         except Exception:
             await session.rollback()
@@ -129,6 +144,9 @@ async def _classification_claim_scope() -> AsyncIterator[tuple]:
                     session=session,
                 ),
                 ClassificationUnitOfWork(
+                    session=session,
+                ),
+                create_orchestration_progress_service(
                     session=session,
                 ),
             )

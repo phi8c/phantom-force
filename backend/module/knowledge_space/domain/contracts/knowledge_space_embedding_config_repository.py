@@ -15,3 +15,10 @@ class KnowledgeSpaceEmbeddingConfigRepository(ABC):
         knowledge_space_id: UUID,
     ) -> KnowledgeSpaceEmbeddingConfig | None:
         pass
+
+    @abstractmethod
+    async def upsert(
+        self,
+        config: KnowledgeSpaceEmbeddingConfig,
+    ) -> KnowledgeSpaceEmbeddingConfig:
+        pass

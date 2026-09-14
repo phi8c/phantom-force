@@ -1,0 +1,9 @@
+from enum import Enum
+
+
+class BatchStatus(str, Enum):
+    DISCOVERING = "DISCOVERING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    COMPLETED_WITH_ERRORS = "COMPLETED_WITH_ERRORS"
+    FAILED = "FAILED"

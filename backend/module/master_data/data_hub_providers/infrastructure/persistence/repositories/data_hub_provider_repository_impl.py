@@ -72,3 +72,25 @@ class DataHubProviderRepositoryImpl(
         return DataHubProviderMapper.to_entity(
             model,
         )
+
+    async def list_enabled(
+        self,
+    ) -> list[DataHubProvider]:
+
+        result = await self.session.execute(
+            select(
+                DataHubProviderModel,
+            )
+            .where(
+                DataHubProviderModel.enabled.is_(True),
+            )
+            .order_by(
+                DataHubProviderModel.name.asc(),
+                DataHubProviderModel.code.asc(),
+            )
+        )
+
+        return [
+            DataHubProviderMapper.to_entity(model)
+            for model in result.scalars().all()
+        ]

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from module.ingest.discovery.application.dtos.requests.discover_batch_request import (
     DiscoverBatchRequest,
 )
@@ -26,6 +28,9 @@ from module.ingest.discovery.domain.contracts.ingestion_discovery_state_reposito
 from module.ingest.discovery.domain.contracts.ingestion_document_state_repository import (
     IngestionDocumentStateRepository,
 )
+from module.ingest.orchestration.application.services import (
+    OrchestrationProgressService,
+)
 from module.ingest.discovery.domain.contracts.unit_of_work import (
     UnitOfWork,
 )
@@ -50,6 +55,9 @@ class DiscoverBatchUseCase:
         discovery_state_repository: IngestionDiscoveryStateRepository,
         provider_resolver: DiscoveryProviderResolver,
         download_task_scheduler: DownloadTaskScheduler,
+        orchestration_progress_service: (
+            OrchestrationProgressService
+        ),
         uow: UnitOfWork,
     ):
         self.source_catalog = source_catalog
@@ -63,6 +71,9 @@ class DiscoverBatchUseCase:
         self.provider_resolver = provider_resolver
         self.download_task_scheduler = (
             download_task_scheduler
+        )
+        self.orchestration_progress_service = (
+            orchestration_progress_service
         )
         self.uow = uow
 
@@ -192,6 +203,7 @@ class DiscoverBatchUseCase:
         result_items: list[
             DiscoveryItem
         ] = []
+        document_ids: list[UUID] = []
 
         for discovered_file in discovered_files:
             document = existing_documents.get(
@@ -317,6 +329,10 @@ class DiscoverBatchUseCase:
                 )
             )
 
+            document_ids.append(
+                document.id,
+            )
+
             result_items.append(
                 DiscoveryItem(
                     document_id=document.id,
@@ -328,6 +344,16 @@ class DiscoverBatchUseCase:
                     ),
                 )
             )
+
+        await (
+            self.orchestration_progress_service
+            .create_discovery_batch(
+                ingestion_job_id=(
+                    request.ingestion_job_id
+                ),
+                document_ids=document_ids,
+            )
+        )
 
         await (
             self.discovery_state_repository

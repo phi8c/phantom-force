@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.knowledge.domain.contracts.knowledge_repository import (
@@ -59,34 +60,23 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         entity: KnowledgeDocumentType,
     ) -> KnowledgeDocumentType:
 
-        model = await self._get_by_space_code(
-            KnowledgeDocumentTypeModel,
-            entity.knowledge_space_id,
-            entity.code,
+        model = await self._upsert_by_space_code(
+            model_class=KnowledgeDocumentTypeModel,
+            values={
+                "knowledge_space_id": entity.knowledge_space_id,
+                "code": entity.code,
+                "name": entity.name,
+                "description": entity.description,
+                "structuring_guidance": entity.structuring_guidance,
+                "metadata_payload": entity.metadata,
+            },
+            merge_columns=[
+                "name",
+                "description",
+                "structuring_guidance",
+                "metadata_payload",
+            ],
         )
-
-        if model is None:
-            model = KnowledgeDocumentTypeModel(
-                knowledge_space_id=entity.knowledge_space_id,
-                code=entity.code,
-                name=entity.name,
-                description=entity.description,
-                structuring_guidance=entity.structuring_guidance,
-                metadata_payload=entity.metadata,
-            )
-            self.session.add(model)
-        else:
-            self._merge_non_null(
-                model,
-                {
-                    "name": entity.name,
-                    "description": entity.description,
-                    "structuring_guidance": entity.structuring_guidance,
-                    "metadata_payload": entity.metadata,
-                },
-            )
-
-        await self._flush_refresh(model)
         return KnowledgeMapper.document_type_to_entity(
             model,
         )
@@ -150,31 +140,21 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         entity: KnowledgeInformationType,
     ) -> KnowledgeInformationType:
 
-        model = await self._get_by_space_code(
-            KnowledgeInformationTypeModel,
-            entity.knowledge_space_id,
-            entity.code,
+        model = await self._upsert_by_space_code(
+            model_class=KnowledgeInformationTypeModel,
+            values={
+                "knowledge_space_id": entity.knowledge_space_id,
+                "code": entity.code,
+                "name": entity.name,
+                "description": entity.description,
+                "metadata_payload": entity.metadata,
+            },
+            merge_columns=[
+                "name",
+                "description",
+                "metadata_payload",
+            ],
         )
-        if model is None:
-            model = KnowledgeInformationTypeModel(
-                knowledge_space_id=entity.knowledge_space_id,
-                code=entity.code,
-                name=entity.name,
-                description=entity.description,
-                metadata_payload=entity.metadata,
-            )
-            self.session.add(model)
-        else:
-            self._merge_non_null(
-                model,
-                {
-                    "name": entity.name,
-                    "description": entity.description,
-                    "metadata_payload": entity.metadata,
-                },
-            )
-
-        await self._flush_refresh(model)
         return KnowledgeMapper.information_type_to_entity(
             model,
         )
@@ -184,35 +164,25 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         entity: KnowledgeInformationField,
     ) -> KnowledgeInformationField:
 
-        model = await self._get_by_space_code(
-            KnowledgeInformationFieldModel,
-            entity.knowledge_space_id,
-            entity.code,
+        model = await self._upsert_by_space_code(
+            model_class=KnowledgeInformationFieldModel,
+            values={
+                "knowledge_space_id": entity.knowledge_space_id,
+                "code": entity.code,
+                "name": entity.name,
+                "description": entity.description,
+                "data_type": entity.data_type,
+                "unit_type": entity.unit_type,
+                "metadata_payload": entity.metadata,
+            },
+            merge_columns=[
+                "name",
+                "description",
+                "data_type",
+                "unit_type",
+                "metadata_payload",
+            ],
         )
-        if model is None:
-            model = KnowledgeInformationFieldModel(
-                knowledge_space_id=entity.knowledge_space_id,
-                code=entity.code,
-                name=entity.name,
-                description=entity.description,
-                data_type=entity.data_type,
-                unit_type=entity.unit_type,
-                metadata_payload=entity.metadata,
-            )
-            self.session.add(model)
-        else:
-            self._merge_non_null(
-                model,
-                {
-                    "name": entity.name,
-                    "description": entity.description,
-                    "data_type": entity.data_type,
-                    "unit_type": entity.unit_type,
-                    "metadata_payload": entity.metadata,
-                },
-            )
-
-        await self._flush_refresh(model)
         return KnowledgeMapper.information_field_to_entity(
             model,
         )
@@ -222,31 +192,21 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         entity: KnowledgeTopic,
     ) -> KnowledgeTopic:
 
-        model = await self._get_by_space_code(
-            KnowledgeTopicModel,
-            entity.knowledge_space_id,
-            entity.code,
+        model = await self._upsert_by_space_code(
+            model_class=KnowledgeTopicModel,
+            values={
+                "knowledge_space_id": entity.knowledge_space_id,
+                "code": entity.code,
+                "name": entity.name,
+                "description": entity.description,
+                "metadata_payload": entity.metadata,
+            },
+            merge_columns=[
+                "name",
+                "description",
+                "metadata_payload",
+            ],
         )
-        if model is None:
-            model = KnowledgeTopicModel(
-                knowledge_space_id=entity.knowledge_space_id,
-                code=entity.code,
-                name=entity.name,
-                description=entity.description,
-                metadata_payload=entity.metadata,
-            )
-            self.session.add(model)
-        else:
-            self._merge_non_null(
-                model,
-                {
-                    "name": entity.name,
-                    "description": entity.description,
-                    "metadata_payload": entity.metadata,
-                },
-            )
-
-        await self._flush_refresh(model)
         return KnowledgeMapper.topic_to_entity(
             model,
         )
@@ -1537,6 +1497,41 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             )
         )
         return result.scalar_one_or_none()
+
+    async def _upsert_by_space_code(
+        self,
+        *,
+        model_class,
+        values: dict[str, Any],
+        merge_columns: list[str],
+    ):
+
+        statement = insert(model_class).values(**values)
+        excluded = statement.excluded
+        update_values = {
+            column_name: func.coalesce(
+                getattr(excluded, column_name),
+                getattr(model_class, column_name),
+            )
+            for column_name in merge_columns
+        }
+        update_values["updated_at"] = func.now()
+
+        statement = (
+            statement.on_conflict_do_update(
+                index_elements=[
+                    model_class.knowledge_space_id,
+                    model_class.code,
+                ],
+                set_=update_values,
+            )
+            .returning(model_class)
+        )
+
+        result = await self.session.execute(statement)
+        model = result.scalar_one()
+        await self.session.flush()
+        return model
 
     async def _flush_refresh(
         self,

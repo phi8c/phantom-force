@@ -25,6 +25,9 @@ from module.ingest.discovery.domain.contracts.download_task_scheduler import (
 from module.ingest.discovery.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SQLAlchemyUnitOfWork,
 )
+from module.ingest.orchestration.composition import (
+    create_orchestration_progress_service,
+)
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_data_hub_repository_impl import (
     KnowledgeSpaceDataHubRepositoryImpl,
 )
@@ -110,6 +113,11 @@ def create_discover_batch_use_case(
             ),
         ),
         download_task_scheduler=download_task_scheduler,
+        orchestration_progress_service=(
+            create_orchestration_progress_service(
+                session=session,
+            )
+        ),
         uow=uow,
     )
 

@@ -22,3 +22,9 @@ class DataHubProviderRepository(ABC):
         code: str,
     ) -> DataHubProvider | None:
         pass
+
+    @abstractmethod
+    async def list_enabled(
+        self,
+    ) -> list[DataHubProvider]:
+        pass

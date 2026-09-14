@@ -1,0 +1,11 @@
+from enum import Enum
+
+
+class IngestionStage(str, Enum):
+    DISCOVERY = "DISCOVERY"
+    DOWNLOAD = "DOWNLOAD"
+    EXTRACTION = "EXTRACTION"
+    CHUNKING = "CHUNKING"
+    EMBEDDING = "EMBEDDING"
+    CLASSIFICATION = "CLASSIFICATION"
+    INDEXING = "INDEXING"

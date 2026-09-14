@@ -35,6 +35,7 @@ class SharePointDiscoveryProvider(
     """
 
     PROVIDER_NAME = "sharepoint"
+    INGESTED_FIELD_NAME = "DaIngest"
 
     def __init__(
         self,
@@ -175,10 +176,21 @@ class SharePointDiscoveryProvider(
                 if not self._is_file(item):
                     continue
 
+                sharepoint_fields = await self._drive_item_fields(
+                    site_id=site_id,
+                    drive_id=drive_id,
+                    item_id=str(item["id"]),
+                )
+                if self._is_already_ingested(
+                    sharepoint_fields,
+                ):
+                    continue
+
                 discovered_files.append(
                     self._to_discovered_file(
                         item=item,
                         source=source,
+                        sharepoint_fields=sharepoint_fields,
                     )
                 )
 
@@ -304,6 +316,67 @@ class SharePointDiscoveryProvider(
         )
 
     @staticmethod
+    def _list_item_endpoint(
+        *,
+        site_id: str,
+        drive_id: str,
+        item_id: str,
+    ) -> str:
+
+        return (
+            f"/sites/{site_id}"
+            f"/drives/{drive_id}"
+            f"/items/{item_id}"
+            f"/listItem"
+        )
+
+    async def _drive_item_fields(
+        self,
+        *,
+        site_id: str,
+        drive_id: str,
+        item_id: str,
+    ) -> dict[str, Any]:
+
+        list_item = await self._graph_client.get(
+            self._list_item_endpoint(
+                site_id=site_id,
+                drive_id=drive_id,
+                item_id=item_id,
+            ),
+            params={
+                "$expand": "fields",
+            },
+        )
+
+        fields = (
+            list_item.get("fields")
+            or {}
+        )
+        if not isinstance(fields, dict):
+            return {}
+        return fields
+
+    @classmethod
+    def _is_already_ingested(
+        cls,
+        fields: dict[str, Any],
+    ) -> bool:
+
+        value = fields.get(
+            cls.INGESTED_FIELD_NAME
+        )
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {
+                "true",
+                "1",
+                "yes",
+            }
+        return False
+
+    @staticmethod
     def _is_folder(
         item: dict[str, Any],
     ) -> bool:
@@ -327,6 +400,7 @@ class SharePointDiscoveryProvider(
         *,
         item: dict[str, Any],
         source: SourceReference,
+        sharepoint_fields: dict[str, Any] | None = None,
     ) -> DiscoveredFile:
 
         name = item.get(
@@ -372,6 +446,10 @@ class SharePointDiscoveryProvider(
                 file_metadata.get(
                     "mimeType"
                 )
+            ),
+            "sharepoint_fields": (
+                sharepoint_fields
+                or {}
             ),
         }
 

@@ -72,3 +72,25 @@ class EmbeddingModelRepositoryImpl(
         return EmbeddingModelMapper.to_entity(
             model,
         )
+
+    async def list_enabled(
+        self,
+    ) -> list[EmbeddingModel]:
+
+        result = await self.session.execute(
+            select(
+                EmbeddingModelModel,
+            )
+            .where(
+                EmbeddingModelModel.enabled.is_(True),
+            )
+            .order_by(
+                EmbeddingModelModel.name.asc(),
+                EmbeddingModelModel.code.asc(),
+            )
+        )
+
+        return [
+            EmbeddingModelMapper.to_entity(model)
+            for model in result.scalars().all()
+        ]

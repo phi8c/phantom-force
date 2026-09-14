@@ -30,6 +30,13 @@ from module.ingest.download.domain.contracts.unit_of_work import (
 from module.ingest.download.domain.enums.task_status import (
     TaskStatus,
 )
+from module.ingest.orchestration.application.services import (
+    NoOpOrchestrationProgressService,
+)
+from module.ingest.orchestration.application.services import (
+    OrchestrationProgressService,
+)
+from module.ingest.orchestration.domain.enums import IngestionStage
 
 
 class DownloadFileUseCase:
@@ -42,6 +49,11 @@ class DownloadFileUseCase:
         storage_asset_repository: StorageAssetRepository,
         extraction_task_scheduler: ExtractionTaskScheduler,
         uow: UnitOfWork,
+        orchestration_progress_service: (
+            OrchestrationProgressService
+            | NoOpOrchestrationProgressService
+            | None
+        ) = None,
         max_attempts: int = 3,
     ):
         self.task_repository = task_repository
@@ -52,6 +64,10 @@ class DownloadFileUseCase:
         )
         self.extraction_task_scheduler = (
             extraction_task_scheduler
+        )
+        self.orchestration_progress_service = (
+            orchestration_progress_service
+            or NoOpOrchestrationProgressService()
         )
         self.uow = uow
         self.max_attempts = max_attempts
@@ -150,6 +166,28 @@ class DownloadFileUseCase:
                 )
             )
 
+            await (
+                self.orchestration_progress_service
+                .mark_stage_completed(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    stage=IngestionStage.DOWNLOAD,
+                )
+            )
+
+            await (
+                self.orchestration_progress_service
+                .mark_stage_ready(
+                    ingestion_job_id=(
+                        task.ingestion_job_id
+                    ),
+                    document_id=task.document_id,
+                    stage=IngestionStage.EXTRACTION,
+                )
+            )
+
             await self.uow.commit()
 
         except Exception as exc:
@@ -181,6 +219,30 @@ class DownloadFileUseCase:
                 await self.task_repository.update(
                     task,
                 )
+
+                if task.status == TaskStatus.FAILED:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_failed(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=IngestionStage.DOWNLOAD,
+                            error=str(exc),
+                        )
+                    )
+                else:
+                    await (
+                        self.orchestration_progress_service
+                        .mark_stage_ready(
+                            ingestion_job_id=(
+                                task.ingestion_job_id
+                            ),
+                            document_id=task.document_id,
+                            stage=IngestionStage.DOWNLOAD,
+                        )
+                    )
 
                 await self.uow.commit()
 

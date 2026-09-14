@@ -15,3 +15,10 @@ class KnowledgeSpaceDataHubRepository(ABC):
         knowledge_space_id: UUID,
     ) -> KnowledgeSpaceDataHub | None:
         pass
+
+    @abstractmethod
+    async def upsert(
+        self,
+        config: KnowledgeSpaceDataHub,
+    ) -> KnowledgeSpaceDataHub:
+        pass
