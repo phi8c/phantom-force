@@ -1,35 +1,30 @@
 "use client";
 
-import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import { mockIngestionJobs } from "../mocks/ingestion.mock";
-import type {
-  IngestionFilters,
-  IngestionJob,
-} from "../types/ingestion.types";
+import { ingestionApi } from "../api/ingestion.api";
+import type { IngestionFilters } from "../types/ingestion.types";
+import { ingestionQueryKeys } from "./use-ingestion-config";
 
 export function useIngestionJobs(
   filters: IngestionFilters,
-): IngestionJob[] {
-  return useMemo(() => {
-    const search = filters.search.trim().toLowerCase();
-
-    return mockIngestionJobs.filter((job) => {
-      const matchesSearch =
-        !search ||
-        job.name.toLowerCase().includes(search) ||
-        job.sourceName.toLowerCase().includes(search) ||
-        job.knowledgeSpaceName.toLowerCase().includes(search);
-
-      const matchesStatus =
-        filters.status === "ALL" ||
-        job.status === filters.status;
-
-      const matchesSource =
-        filters.source === "ALL" ||
-        job.sourceName === filters.source;
-
-      return matchesSearch && matchesStatus && matchesSource;
-    });
-  }, [filters]);
+  knowledgeSpaceId?: string,
+) {
+  return useQuery({
+    queryKey: [
+      ...ingestionQueryKeys.all,
+      "jobs",
+      knowledgeSpaceId ?? "",
+      filters.status,
+    ],
+    queryFn: () =>
+      ingestionApi.getJobs({
+        knowledgeSpaceId,
+        status:
+          filters.status === "ALL"
+            ? undefined
+            : filters.status,
+        limit: 20,
+      }),
+  });
 }

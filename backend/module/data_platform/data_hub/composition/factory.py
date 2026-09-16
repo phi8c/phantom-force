@@ -16,6 +16,9 @@ from module.data_platform.data_hub.application.use_cases.discovery_files import 
     DiscoverFilesUseCase,
 )
 
+from module.data_platform.data_hub.application.use_cases.browse_sharepoint import (
+    BrowseSharePointUseCase,
+)
 from module.data_platform.data_hub.application.use_cases.download_file import (
     DownloadFileUseCase,
 )
@@ -55,6 +58,9 @@ def create_data_hub(
     service = DataHubService(
         discover_files=discover_files,
         download_file=download_file,
+        browse_sharepoint=BrowseSharePointUseCase(
+            browse_provider=data_hub_provider.browser,
+        ),
     )
 
     return DataHub(

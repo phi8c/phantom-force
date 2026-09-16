@@ -12,7 +12,7 @@ class IngestionJob:
 
     trigger_type: str
 
-    status: str
+    status: str | None
 
     is_build_graph: bool
 

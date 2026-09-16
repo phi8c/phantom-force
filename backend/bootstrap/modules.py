@@ -23,6 +23,27 @@ from bootstrap.database import async_session_factory
 from module.ingest.config.application.use_cases.start_ingestion import (
     StartIngestionUseCase,
 )
+from module.ingest.config.application.use_cases.start_existing_ingestion_job import (
+    StartExistingIngestionJobUseCase,
+)
+from module.ingest.config.application.use_cases.create_ingestion_job import (
+    CreateIngestionJobUseCase,
+)
+from module.ingest.config.application.use_cases.get_ingestion_job_configuration_response import (
+    GetIngestionJobConfigurationResponseUseCase,
+)
+from module.ingest.config.application.use_cases.list_ingestion_jobs import (
+    ListIngestionJobsUseCase,
+)
+from module.ingest.config.application.use_cases.get_ingestion_job_scope import (
+    GetIngestionJobScopeUseCase,
+)
+from module.ingest.config.application.use_cases.save_ingestion_job_configuration import (
+    SaveIngestionJobConfigurationUseCase,
+)
+from module.ingest.config.application.use_cases.save_ingestion_job_scope import (
+    SaveIngestionJobScopeUseCase,
+)
 from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
     IngestionConfigRepositoryImpl,
 )
@@ -37,6 +58,9 @@ from module.ingest.master.extraction_strategy.infrastructure.persistence.reposit
 )
 from module.ingest.master.model_set.infrastructure.persistence.repositories.model_set_repository_impl import (
     ModelSetRepositoryImpl,
+)
+from module.ingest.master.composition.master_config_resolver import (
+    IngestionMasterConfigResolver,
 )
 from module.ingest.download.infrastructure.persistence.repositories.download_task_repository_impl import (
     DownloadTaskRepositoryImpl,
@@ -86,6 +110,12 @@ from module.ingest.chunking.infrastructure.persistence.queries.document_chunk_qu
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_repository_impl import (
     KnowledgeSpaceRepositoryImpl,
 )
+from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_data_hub_repository_impl import (
+    KnowledgeSpaceDataHubRepositoryImpl,
+)
+from module.master_data.data_hub_providers.infrastructure.persistence.repositories.data_hub_provider_repository_impl import (
+    DataHubProviderRepositoryImpl,
+)
 from integration.ingest.discovery.download_task_scheduler import (
     ModuleDownloadTaskScheduler,
 )
@@ -119,6 +149,90 @@ from integration.ingest.classification.chunk_reader import (
 
 
 @asynccontextmanager
+async def create_ingestion_job_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield CreateIngestionJobUseCase(
+            ingestion_config_repository=(
+                IngestionConfigRepositoryImpl(
+                    session,
+                )
+            ),
+            uow=IngestionConfigUnitOfWork(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def list_ingestion_jobs_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield ListIngestionJobsUseCase(
+            repository=IngestionConfigRepositoryImpl(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def get_ingestion_job_configuration_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield GetIngestionJobConfigurationResponseUseCase(
+            repository=IngestionConfigRepositoryImpl(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def save_ingestion_job_configuration_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield SaveIngestionJobConfigurationUseCase(
+            ingestion_config_repository=(
+                IngestionConfigRepositoryImpl(
+                    session,
+                )
+            ),
+            master_config_resolver=IngestionMasterConfigResolver(
+                session=session,
+            ),
+            uow=IngestionConfigUnitOfWork(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def get_ingestion_job_scope_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield GetIngestionJobScopeUseCase(
+            repository=IngestionConfigRepositoryImpl(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def save_ingestion_job_scope_use_case_scope():
+
+    async with async_session_factory() as session:
+        yield SaveIngestionJobScopeUseCase(
+            ingestion_config_repository=(
+                IngestionConfigRepositoryImpl(
+                    session,
+                )
+            ),
+            uow=IngestionConfigUnitOfWork(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
 async def start_ingestion_use_case_scope(
     *,
     discovery_dispatcher,
@@ -148,6 +262,36 @@ async def start_ingestion_use_case_scope(
             ),
             model_set_repository=(
                 ModelSetRepositoryImpl(
+                    session,
+                )
+            ),
+            discovery_dispatcher=discovery_dispatcher,
+            uow=IngestionConfigUnitOfWork(
+                session,
+            ),
+        )
+
+
+@asynccontextmanager
+async def start_existing_ingestion_job_use_case_scope(
+    *,
+    discovery_dispatcher,
+):
+
+    async with async_session_factory() as session:
+        yield StartExistingIngestionJobUseCase(
+            ingestion_config_repository=(
+                IngestionConfigRepositoryImpl(
+                    session,
+                )
+            ),
+            knowledge_space_data_hub_repository=(
+                KnowledgeSpaceDataHubRepositoryImpl(
+                    session,
+                )
+            ),
+            data_hub_provider_repository=(
+                DataHubProviderRepositoryImpl(
                     session,
                 )
             ),

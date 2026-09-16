@@ -1,79 +1,83 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { BaseModal } from "@/components/shared/modal";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+
+import { useCreateIngestionJob } from "../hooks/use-ingestion-config";
 
 interface IngestionCreateDialogProps {
   open: boolean;
+  knowledgeSpaceId?: string;
   onClose: () => void;
+  onCreated: (ingestionJobId: string) => void;
 }
 
 export function IngestionCreateDialog({
   open,
+  knowledgeSpaceId,
   onClose,
+  onCreated,
 }: IngestionCreateDialogProps) {
-  const [name, setName] = useState("");
+  const [isBuildGraph, setIsBuildGraph] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const createMutation = useCreateIngestionJob();
 
-  if (!open) {
-    return null;
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setIsBuildGraph(false);
+    setError(null);
+  }, [open]);
+
+  async function handleCreate() {
+    if (!knowledgeSpaceId) {
+      setError("Knowledge Space context is required.");
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const result = await createMutation.mutateAsync({
+        knowledgeSpaceId,
+        triggerType: "MANUAL",
+        isBuildGraph,
+      });
+
+      onCreated(result.ingestion_job_id);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to create ingestion job.",
+      );
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl border bg-background shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">
-              New ingestion
-            </h2>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create a new ingestion job.
-            </p>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-
-        <div className="space-y-4 px-6 py-5">
-          <div className="space-y-2">
-            <label
-              htmlFor="ingestion-name"
-              className="text-sm font-medium"
-            >
-              Ingestion name
-            </label>
-
-            <Input
-              id="ingestion-name"
-              value={name}
-              onChange={(event) =>
-                setName(event.target.value)
-              }
-              placeholder="Enter ingestion name"
-            />
-          </div>
-
-          <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-            Source and Knowledge Space selection will be
-            connected to backend data later.
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t px-6 py-4">
+    <BaseModal
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !createMutation.isPending) {
+          onClose();
+        }
+      }}
+      title="Create Ingestion"
+      description={knowledgeSpaceId}
+      size="lg"
+      preventClose={createMutation.isPending}
+      footer={
+        <>
           <Button
             type="button"
             variant="outline"
+            disabled={createMutation.isPending}
             onClick={onClose}
           >
             Cancel
@@ -81,13 +85,38 @@ export function IngestionCreateDialog({
 
           <Button
             type="button"
-            disabled={!name.trim()}
-            onClick={onClose}
+            disabled={
+              !knowledgeSpaceId || createMutation.isPending
+            }
+            onClick={() => void handleCreate()}
           >
-            Create
+            {createMutation.isPending ? "Creating..." : "Create"}
           </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4">
+        <div className="grid gap-2">
+          <Label>Trigger Type</Label>
+          <div className="flex h-9 items-center rounded-lg border px-3 text-sm">
+            MANUAL
+          </div>
         </div>
+
+        <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+          <Label>Build Knowledge Graph</Label>
+          <Switch
+            checked={isBuildGraph}
+            onCheckedChange={setIsBuildGraph}
+          />
+        </div>
+
+        {error && (
+          <p className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
       </div>
-    </div>
+    </BaseModal>
   );
 }

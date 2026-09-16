@@ -31,9 +31,9 @@ class IngestionJobModel(
         nullable=False,
     )
 
-    status: Mapped[str] = mapped_column(
+    status: Mapped[str | None] = mapped_column(
         String(50),
-        nullable=False,
+        nullable=True,
     )
 
     is_build_graph: Mapped[bool] = mapped_column(

@@ -5,17 +5,13 @@ export function validateCreateIngestion(
 ): Record<string, string> {
   const errors: Record<string, string> = {};
 
-  if (!payload.name.trim()) {
-    errors.name = "Ingestion name is required.";
-  }
-
-  if (!payload.sourceId.trim()) {
-    errors.sourceId = "Source is required.";
-  }
-
   if (!payload.knowledgeSpaceId.trim()) {
     errors.knowledgeSpaceId =
       "Knowledge Space is required.";
+  }
+
+  if (payload.triggerType !== "MANUAL") {
+    errors.triggerType = "Trigger Type must be MANUAL.";
   }
 
   return errors;

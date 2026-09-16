@@ -75,3 +75,25 @@ class ExtractionStrategyRepositoryImpl(
         return ExtractionStrategyMapper.to_entity(
             model,
         )
+
+    async def list_enabled(
+        self,
+    ) -> list[ExtractionStrategy]:
+
+        result = await self.session.execute(
+            select(
+                ExtractionStrategyModel,
+            )
+            .where(
+                ExtractionStrategyModel.enabled.is_(True),
+            )
+            .order_by(
+                ExtractionStrategyModel.name.asc(),
+                ExtractionStrategyModel.code.asc(),
+            )
+        )
+
+        return [
+            ExtractionStrategyMapper.to_entity(model)
+            for model in result.scalars().all()
+        ]

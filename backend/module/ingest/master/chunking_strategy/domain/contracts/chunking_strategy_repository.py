@@ -22,3 +22,9 @@ class ChunkingStrategyRepository(ABC):
         code: str,
     ) -> ChunkingStrategy | None:
         pass
+
+    @abstractmethod
+    async def list_enabled(
+        self,
+    ) -> list[ChunkingStrategy]:
+        pass

@@ -22,3 +22,13 @@ class DiscoveredFileResponse(BaseModel):
     provider_metadata: dict[str, Any]
     last_modified_at: str | None
     original_file_path: str | None
+
+
+class BrowseNodeResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    site_id: str | None = None
+    drive_id: str | None = None
+    parent_id: str | None = None
+    has_children: bool = False

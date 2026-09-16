@@ -75,3 +75,25 @@ class ChunkingStrategyRepositoryImpl(
         return ChunkingStrategyMapper.to_entity(
             model,
         )
+
+    async def list_enabled(
+        self,
+    ) -> list[ChunkingStrategy]:
+
+        result = await self.session.execute(
+            select(
+                ChunkingStrategyModel,
+            )
+            .where(
+                ChunkingStrategyModel.enabled.is_(True),
+            )
+            .order_by(
+                ChunkingStrategyModel.name.asc(),
+                ChunkingStrategyModel.code.asc(),
+            )
+        )
+
+        return [
+            ChunkingStrategyMapper.to_entity(model)
+            for model in result.scalars().all()
+        ]

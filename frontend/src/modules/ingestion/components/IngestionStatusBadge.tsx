@@ -13,6 +13,14 @@ const statusConfig: Record<
     className: string;
   }
 > = {
+  NOT_STARTED: {
+    label: "Not started",
+    className: "bg-muted text-muted-foreground",
+  },
+  READY: {
+    label: "Ready",
+    className: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  },
   QUEUED: {
     label: "Queued",
     className: "bg-muted text-muted-foreground",

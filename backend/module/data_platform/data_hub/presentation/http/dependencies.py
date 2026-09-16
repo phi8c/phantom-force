@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
 from module.data_platform.common.microsoft_graph.client import (
     MicrosoftGraphClient,
 )
@@ -10,6 +8,9 @@ from module.data_platform.common.microsoft_graph.authentication.token_provider i
 )
 from module.data_platform.data_hub.application.services.data_hub_service import (
     DataHubService,
+)
+from module.data_platform.data_hub.application.use_cases.browse_sharepoint import (
+    BrowseSharePointUseCase,
 )
 from module.data_platform.data_hub.application.use_cases.discovery_files import (
     DiscoverFilesUseCase,
@@ -20,6 +21,7 @@ from module.data_platform.data_hub.application.use_cases.download_file import (
 from module.data_platform.data_hub.infrastructure.providers.sharepoint.provider import (
     SharePointProvider,
 )
+from shared.config.settings import settings
 
 
 def build_data_hub_service(
@@ -27,6 +29,7 @@ def build_data_hub_service(
 ) -> DataHubService:
     graph_client = MicrosoftGraphClient(
         token_provider=token_provider,
+        base_url=settings.GRAPH_BASE_URL,
     )
 
     sharepoint_provider = SharePointProvider(
@@ -39,5 +42,8 @@ def build_data_hub_service(
         ),
         download_file=DownloadFileUseCase(
             file_downloader=sharepoint_provider.downloader,
+        ),
+        browse_sharepoint=BrowseSharePointUseCase(
+            browse_provider=sharepoint_provider.browser,
         ),
     )

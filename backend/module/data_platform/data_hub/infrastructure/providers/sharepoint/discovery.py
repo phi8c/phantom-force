@@ -26,10 +26,12 @@ class SharePointDiscoveryProvider(
     """
     Paged and resumable SharePoint discovery.
 
-    Cursor contains only traversal state:
-    - current_page_url
+    Cursor contains traversal state with SharePoint source context:
+    - current.site_id
+    - current.drive_id
+    - current.url
     - item_offset
-    - pending_endpoints
+    - pending
 
     SharePoint-specific concepts stay inside this provider.
     """
@@ -58,36 +60,19 @@ class SharePointDiscoveryProvider(
                 "Discovery limit must be greater than 0"
             )
 
-        site_id = self._get_required_metadata(
-            source,
-            "site_id",
-        )
-
-        drive_id = self._get_required_metadata(
-            source,
-            "drive_id",
-        )
-
-        folder_id = source.metadata.get(
-            "folder_id"
-        )
-
         # ---------------------------------------------
         # Restore or initialize traversal state
         # ---------------------------------------------
 
         if cursor:
-            pending_endpoints = list(
-                cursor.get(
-                    "pending_endpoints",
-                    [],
-                )
+            pending_endpoints = self._restore_pending(
+                cursor,
+                source,
             )
-
-            current_page_url = cursor.get(
-                "current_page_url"
+            current_endpoint = self._restore_current(
+                cursor,
+                source,
             )
-
             item_offset = int(
                 cursor.get(
                     "item_offset",
@@ -97,14 +82,13 @@ class SharePointDiscoveryProvider(
 
         else:
             pending_endpoints = [
-                self._children_endpoint(
-                    site_id=site_id,
-                    drive_id=drive_id,
-                    folder_id=folder_id,
+                self._to_endpoint_context(
+                    root
                 )
+                for root in self._source_roots(source)
             ]
 
-            current_page_url = None
+            current_endpoint = None
             item_offset = 0
 
         discovered_files: list[
@@ -117,19 +101,19 @@ class SharePointDiscoveryProvider(
 
         while len(discovered_files) < limit:
 
-            if current_page_url is None:
+            if current_endpoint is None:
 
                 if not pending_endpoints:
                     break
 
-                current_page_url = (
+                current_endpoint = (
                     pending_endpoints.pop()
                 )
 
                 item_offset = 0
 
             response = await self._graph_client.get(
-                current_page_url
+                current_endpoint["url"]
             )
 
             values = response.get(
@@ -161,8 +145,12 @@ class SharePointDiscoveryProvider(
 
                         pending_endpoints.append(
                             self._children_endpoint(
-                                site_id=site_id,
-                                drive_id=drive_id,
+                                site_id=current_endpoint[
+                                    "site_id"
+                                ],
+                                drive_id=current_endpoint[
+                                    "drive_id"
+                                ],
                                 folder_id=child_folder_id,
                             )
                         )
@@ -177,8 +165,8 @@ class SharePointDiscoveryProvider(
                     continue
 
                 sharepoint_fields = await self._drive_item_fields(
-                    site_id=site_id,
-                    drive_id=drive_id,
+                    site_id=current_endpoint["site_id"],
+                    drive_id=current_endpoint["drive_id"],
                     item_id=str(item["id"]),
                 )
                 if self._is_already_ingested(
@@ -190,6 +178,8 @@ class SharePointDiscoveryProvider(
                     self._to_discovered_file(
                         item=item,
                         source=source,
+                        site_id=current_endpoint["site_id"],
+                        drive_id=current_endpoint["drive_id"],
                         sharepoint_fields=sharepoint_fields,
                     )
                 )
@@ -208,11 +198,11 @@ class SharePointDiscoveryProvider(
                     if index < len(values):
 
                         next_cursor = {
-                            "current_page_url": (
-                                current_page_url
+                            "current": (
+                                current_endpoint
                             ),
                             "item_offset": index,
-                            "pending_endpoints": (
+                            "pending": (
                                 pending_endpoints
                             ),
                         }
@@ -234,11 +224,16 @@ class SharePointDiscoveryProvider(
                     ):
 
                         next_cursor = {
-                            "current_page_url": (
-                                next_link
+                            "current": (
+                                self._with_url(
+                                    current_endpoint,
+                                    next_link,
+                                )
+                                if next_link
+                                else None
                             ),
                             "item_offset": 0,
-                            "pending_endpoints": (
+                            "pending": (
                                 pending_endpoints
                             ),
                         }
@@ -259,8 +254,16 @@ class SharePointDiscoveryProvider(
             # Current Graph page fully processed
             # -----------------------------------------
 
-            current_page_url = response.get(
+            next_link = response.get(
                 "@odata.nextLink"
+            )
+            current_endpoint = (
+                self._with_url(
+                    current_endpoint,
+                    next_link,
+                )
+                if next_link
+                else None
             )
 
             item_offset = 0
@@ -270,7 +273,7 @@ class SharePointDiscoveryProvider(
         # ---------------------------------------------
 
         has_more = bool(
-            current_page_url
+            current_endpoint
             or pending_endpoints
         )
 
@@ -278,11 +281,11 @@ class SharePointDiscoveryProvider(
 
         if has_more:
             next_cursor = {
-                "current_page_url": (
-                    current_page_url
+                "current": (
+                    current_endpoint
                 ),
                 "item_offset": item_offset,
-                "pending_endpoints": (
+                "pending": (
                     pending_endpoints
                 ),
             }
@@ -299,21 +302,27 @@ class SharePointDiscoveryProvider(
         site_id: str,
         drive_id: str,
         folder_id: str | None,
-    ) -> str:
+    ) -> dict[str, str]:
 
         if folder_id:
-            return (
+            url = (
                 f"/sites/{site_id}"
                 f"/drives/{drive_id}"
                 f"/items/{folder_id}"
                 f"/children"
             )
+        else:
+            url = (
+                f"/sites/{site_id}"
+                f"/drives/{drive_id}"
+                f"/root/children"
+            )
 
-        return (
-            f"/sites/{site_id}"
-            f"/drives/{drive_id}"
-            f"/root/children"
-        )
+        return {
+            "site_id": site_id,
+            "drive_id": drive_id,
+            "url": url,
+        }
 
     @staticmethod
     def _list_item_endpoint(
@@ -400,6 +409,8 @@ class SharePointDiscoveryProvider(
         *,
         item: dict[str, Any],
         source: SourceReference,
+        site_id: str,
+        drive_id: str,
         sharepoint_fields: dict[str, Any] | None = None,
     ) -> DiscoveredFile:
 
@@ -427,12 +438,8 @@ class SharePointDiscoveryProvider(
         )
 
         provider_metadata = {
-            "site_id": source.metadata.get(
-                "site_id"
-            ),
-            "drive_id": source.metadata.get(
-                "drive_id"
-            ),
+            "site_id": site_id,
+            "drive_id": drive_id,
             "item_id": item.get(
                 "id"
             ),
@@ -560,15 +567,213 @@ class SharePointDiscoveryProvider(
                 f"{source.provider}"
             )
 
-        cls._get_required_metadata(
-            source,
+        cls._source_roots(source)
+
+    @classmethod
+    def _source_roots(
+        cls,
+        source: SourceReference,
+    ) -> list[dict[str, str | None]]:
+        roots = source.metadata.get("roots")
+        if roots is None:
+            return [
+                {
+                    "site_id": cls._get_required_metadata(
+                        source,
+                        "site_id",
+                    ),
+                    "drive_id": cls._get_required_metadata(
+                        source,
+                        "drive_id",
+                    ),
+                    "folder_id": (
+                        str(source.metadata.get("folder_id"))
+                        if source.metadata.get("folder_id")
+                        else None
+                    ),
+                }
+            ]
+
+        if not isinstance(roots, list) or not roots:
+            raise ValueError(
+                "SharePoint source metadata.roots must be a non-empty list"
+            )
+
+        normalized_roots: list[dict[str, str | None]] = []
+
+        for root in roots:
+            if not isinstance(root, dict):
+                raise ValueError(
+                    "SharePoint source metadata.roots items must be objects"
+                )
+
+            site_id = cls._get_required_root_value(
+                root,
+                "site_id",
+            )
+            drive_id = cls._get_required_root_value(
+                root,
+                "drive_id",
+            )
+            folder_value = root.get("folder_id")
+            folder_id = (
+                str(folder_value)
+                if folder_value
+                else None
+            )
+
+            normalized_roots.append(
+                {
+                    "site_id": site_id,
+                    "drive_id": drive_id,
+                    "folder_id": folder_id,
+                }
+            )
+
+        return normalized_roots
+
+    @classmethod
+    def _to_endpoint_context(
+        cls,
+        root: dict[str, str | None],
+    ) -> dict[str, str]:
+        site_id = cls._require_context_value(
+            root.get("site_id"),
             "site_id",
         )
-
-        cls._get_required_metadata(
-            source,
+        drive_id = cls._require_context_value(
+            root.get("drive_id"),
             "drive_id",
         )
+
+        return cls._children_endpoint(
+            site_id=site_id,
+            drive_id=drive_id,
+            folder_id=root.get("folder_id"),
+        )
+
+    @classmethod
+    def _restore_current(
+        cls,
+        cursor: dict[str, Any],
+        source: SourceReference,
+    ) -> dict[str, str] | None:
+        current = cursor.get("current")
+        if isinstance(current, dict):
+            return cls._normalize_endpoint_context(current)
+
+        current_page_url = cursor.get("current_page_url")
+        if not current_page_url:
+            return None
+
+        return {
+            "site_id": cls._require_context_value(
+                cursor.get("site_id")
+                or source.metadata.get("site_id"),
+                "site_id",
+            ),
+            "drive_id": cls._require_context_value(
+                cursor.get("drive_id")
+                or source.metadata.get("drive_id"),
+                "drive_id",
+            ),
+            "url": str(current_page_url),
+        }
+
+    @classmethod
+    def _restore_pending(
+        cls,
+        cursor: dict[str, Any],
+        source: SourceReference,
+    ) -> list[dict[str, str]]:
+        pending = cursor.get("pending")
+        if isinstance(pending, list):
+            return [
+                cls._normalize_endpoint_context(endpoint)
+                for endpoint in pending
+                if isinstance(endpoint, dict)
+            ]
+
+        legacy_pending = cursor.get(
+            "pending_endpoints",
+            [],
+        )
+        if not isinstance(legacy_pending, list):
+            return []
+
+        site_id = cls._require_context_value(
+            cursor.get("site_id")
+            or source.metadata.get("site_id"),
+            "site_id",
+        )
+        drive_id = cls._require_context_value(
+            cursor.get("drive_id")
+            or source.metadata.get("drive_id"),
+            "drive_id",
+        )
+
+        return [
+            {
+                "site_id": site_id,
+                "drive_id": drive_id,
+                "url": str(endpoint),
+            }
+            for endpoint in legacy_pending
+            if endpoint
+        ]
+
+    @classmethod
+    def _normalize_endpoint_context(
+        cls,
+        endpoint: dict[str, Any],
+    ) -> dict[str, str]:
+        return {
+            "site_id": cls._require_context_value(
+                endpoint.get("site_id"),
+                "site_id",
+            ),
+            "drive_id": cls._require_context_value(
+                endpoint.get("drive_id"),
+                "drive_id",
+            ),
+            "url": cls._require_context_value(
+                endpoint.get("url"),
+                "url",
+            ),
+        }
+
+    @staticmethod
+    def _with_url(
+        endpoint: dict[str, str],
+        url: str,
+    ) -> dict[str, str]:
+        return {
+            "site_id": endpoint["site_id"],
+            "drive_id": endpoint["drive_id"],
+            "url": url,
+        }
+
+    @staticmethod
+    def _get_required_root_value(
+        root: dict[str, Any],
+        key: str,
+    ) -> str:
+        return SharePointDiscoveryProvider._require_context_value(
+            root.get(key),
+            key,
+        )
+
+    @staticmethod
+    def _require_context_value(
+        value: Any,
+        key: str,
+    ) -> str:
+        if value is None or str(value).strip() == "":
+            raise ValueError(
+                f"Missing SharePoint source metadata: {key}"
+            )
+
+        return str(value)
 
     @staticmethod
     def _get_required_metadata(

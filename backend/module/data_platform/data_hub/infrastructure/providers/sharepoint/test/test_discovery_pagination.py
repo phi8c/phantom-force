@@ -158,6 +158,8 @@ async def test_discovery_metadata_error_is_not_treated_as_not_ingested():
             {
                 "$expand": "fields",
             },
+            "site",
+            "drive",
         ),
     ]
 
@@ -216,18 +218,24 @@ async def test_discovery_limit_counts_returned_files_not_skipped_files():
             {
                 "$expand": "fields",
             },
+            "site",
+            "drive",
         ),
         (
             "file_2",
             {
                 "$expand": "fields",
             },
+            "site",
+            "drive",
         ),
         (
             "file_3",
             {
                 "$expand": "fields",
             },
+            "site",
+            "drive",
         ),
     ]
 
@@ -271,9 +279,13 @@ async def test_discovery_cursor_offset_advances_past_skipped_files():
     ]
     assert first_page.has_more is True
     assert first_page.next_cursor == {
-        "current_page_url": "/sites/site/drives/drive/root/children",
+        "current": {
+            "site_id": "site",
+            "drive_id": "drive",
+            "url": "/sites/site/drives/drive/root/children",
+        },
         "item_offset": 2,
-        "pending_endpoints": [],
+        "pending": [],
     }
 
     second_page = await provider.discover(
@@ -292,6 +304,84 @@ async def test_discovery_cursor_offset_advances_past_skipped_files():
     assert second_page.next_cursor is None
 
 
+@pytest.mark.asyncio
+async def test_discovery_supports_multiple_roots_with_source_context():
+    graph_client = FakeGraphClient(
+        pages={
+            "/sites/site_a/drives/drive_a/root/children": {
+                "value": [
+                    drive_file("file_a", "a.pdf"),
+                ],
+            },
+            "/sites/site_b/drives/drive_b/items/folder_b/children": {
+                "value": [
+                    drive_file("file_b", "b.pdf"),
+                ],
+            },
+        },
+        fields={
+            "file_a": {
+                "DaIngest": False,
+            },
+            "file_b": {
+                "DaIngest": False,
+            },
+        },
+    )
+
+    page = await SharePointDiscoveryProvider(graph_client).discover(
+        SourceReference(
+            provider="sharepoint",
+            identifier="source",
+            metadata={
+                "roots": [
+                    {
+                        "site_id": "site_a",
+                        "drive_id": "drive_a",
+                        "folder_id": None,
+                    },
+                    {
+                        "site_id": "site_b",
+                        "drive_id": "drive_b",
+                        "folder_id": "folder_b",
+                    },
+                ],
+            },
+        ),
+        limit=10,
+    )
+
+    assert [
+        item.external_file_id
+        for item in page.items
+    ] == [
+        "file_b",
+        "file_a",
+    ]
+    assert page.items[0].provider_metadata["site_id"] == "site_b"
+    assert page.items[0].provider_metadata["drive_id"] == "drive_b"
+    assert page.items[1].provider_metadata["site_id"] == "site_a"
+    assert page.items[1].provider_metadata["drive_id"] == "drive_a"
+    assert graph_client.field_calls == [
+        (
+            "file_b",
+            {
+                "$expand": "fields",
+            },
+            "site_b",
+            "drive_b",
+        ),
+        (
+            "file_a",
+            {
+                "$expand": "fields",
+            },
+            "site_a",
+            "drive_a",
+        ),
+    ]
+
+
 class FakeGraphClient:
     def __init__(self, *, pages, fields, field_errors=None):
         self._pages = pages
@@ -302,11 +392,15 @@ class FakeGraphClient:
 
     async def get(self, endpoint, *, params=None):
         if endpoint.endswith("/listItem"):
+            site_id = endpoint.split("/sites/", 1)[1].split("/", 1)[0]
+            drive_id = endpoint.split("/drives/", 1)[1].split("/", 1)[0]
             item_id = endpoint.split("/items/", 1)[1].split("/", 1)[0]
             self.field_calls.append(
                 (
                     item_id,
                     params,
+                    site_id,
+                    drive_id,
                 )
             )
             if item_id in self._field_errors:

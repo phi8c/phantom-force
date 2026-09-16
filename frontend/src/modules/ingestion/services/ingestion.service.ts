@@ -2,15 +2,21 @@ import { ingestionApi } from "../api/ingestion.api";
 import { mockIngestionJobs } from "../mocks/ingestion.mock";
 import type {
   CreateIngestionRequest,
+  CreateIngestionResponse,
   IngestionJob,
+  IngestionJobsPage,
 } from "../types/ingestion.types";
 
 const USE_MOCK_DATA = true;
 
 export const ingestionService = {
-  async getJobs(): Promise<IngestionJob[]> {
+  async getJobs(): Promise<IngestionJobsPage> {
     if (USE_MOCK_DATA) {
-      return Promise.resolve(mockIngestionJobs);
+      return Promise.resolve({
+        items: mockIngestionJobs,
+        next_cursor: null,
+        has_more: false,
+      });
     }
 
     return ingestionApi.getJobs();
@@ -28,7 +34,7 @@ export const ingestionService = {
 
   async createJob(
     payload: CreateIngestionRequest,
-  ): Promise<IngestionJob> {
+  ): Promise<CreateIngestionResponse> {
     return ingestionApi.createJob(payload);
   },
 

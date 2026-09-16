@@ -12,6 +12,10 @@ const ingestionTabs = [
     label: "Ingestion Jobs",
   },
   {
+    value: "live",
+    label: "Live Stream Processing",
+  },
+  {
     value: "schedules",
     label: "Schedules",
   },

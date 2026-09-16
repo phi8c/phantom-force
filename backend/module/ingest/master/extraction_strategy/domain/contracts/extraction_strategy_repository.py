@@ -22,3 +22,9 @@ class ExtractionStrategyRepository(ABC):
         code: str,
     ) -> ExtractionStrategy | None:
         pass
+
+    @abstractmethod
+    async def list_enabled(
+        self,
+    ) -> list[ExtractionStrategy]:
+        pass

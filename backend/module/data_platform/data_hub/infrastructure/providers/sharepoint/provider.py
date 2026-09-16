@@ -9,7 +9,11 @@ from module.data_platform.data_hub.domain.contracts.discovery_provider import (
 from module.data_platform.data_hub.domain.contracts.file_downloader import (
     FileDownloader,
 )
+from module.data_platform.data_hub.domain.contracts.browse_provider import (
+    BrowseProvider,
+)
 
+from .browser import SharePointBrowseProvider
 from .discovery import SharePointDiscoveryProvider
 from .downloader import SharePointFileDownloader
 
@@ -29,4 +33,8 @@ class SharePointProvider:
 
         self.downloader: FileDownloader = (
             SharePointFileDownloader(graph_client)
+        )
+
+        self.browser: BrowseProvider = (
+            SharePointBrowseProvider(graph_client)
         )

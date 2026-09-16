@@ -5,4 +5,5 @@ export type {
   IngestionJob,
   IngestionStage,
   IngestionStatus,
+  IngestionScopeRoot,
 } from "./types/ingestion.types";

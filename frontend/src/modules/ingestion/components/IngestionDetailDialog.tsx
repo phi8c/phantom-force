@@ -1,7 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
-
+import { BaseModal } from "@/components/shared/modal";
 import { Button } from "@/components/ui/button";
 
 import { IngestionStatusBadge } from "./IngestionStatusBadge";
@@ -18,89 +17,78 @@ export function IngestionDetailDialog({
   open,
   onClose,
 }: IngestionDetailDialogProps) {
-  if (!open || !job) {
+  if (!job) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl border bg-background shadow-xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">
-              {job.name}
-            </h2>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Ingestion job details
-            </p>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-
-        <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
-          <DetailItem label="Job ID" value={job.id} />
-          <DetailItem
-            label="Status"
-            value={<IngestionStatusBadge status={job.status} />}
-          />
-          <DetailItem
-            label="Source"
-            value={job.sourceName}
-          />
-          <DetailItem
-            label="Knowledge Space"
-            value={job.knowledgeSpaceName}
-          />
-          <DetailItem
-            label="Current stage"
-            value={job.currentStage}
-          />
-          <DetailItem
-            label="Documents"
-            value={`${job.processedDocumentCount} / ${job.documentCount}`}
-          />
-          <DetailItem
-            label="Started at"
-            value={job.startedAt}
-          />
-          <DetailItem
-            label="Finished at"
-            value={job.finishedAt ?? "—"}
-          />
-
-          {job.errorMessage && (
-            <div className="sm:col-span-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Error
-              </p>
-
-              <p className="mt-1 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                {job.errorMessage}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end border-t px-6 py-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-          >
-            Close
-          </Button>
-        </div>
+    <BaseModal
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
+      title="Ingestion job"
+      description={job.id}
+      size="2xl"
+      footer={
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+        >
+          Close
+        </Button>
+      }
+    >
+      <div className="grid gap-5 sm:grid-cols-2">
+        <DetailItem
+          label="Status"
+          value={
+            <IngestionStatusBadge
+              status={job.status ?? "NOT_STARTED"}
+            />
+          }
+        />
+        <DetailItem
+          label="Knowledge Space"
+          value={job.knowledge_space_id}
+        />
+        <DetailItem
+          label="Trigger"
+          value={job.trigger_type}
+        />
+        <DetailItem
+          label="Build Graph"
+          value={job.is_build_graph ? "Yes" : "No"}
+        />
+        <DetailItem
+          label="Documents"
+          value={`${job.completed_files} / ${job.total_files}`}
+        />
+        <DetailItem
+          label="Failed"
+          value={job.failed_files}
+        />
+        <DetailItem
+          label="Scope"
+          value={job.scope_type ?? "-"}
+        />
+        <DetailItem
+          label="Created"
+          value={formatDate(job.created_at)}
+        />
+        <DetailItem
+          label="Started"
+          value={formatDate(job.started_at)}
+        />
+        <DetailItem
+          label="Finished"
+          value={formatDate(job.finished_at)}
+        />
       </div>
-    </div>
+    </BaseModal>
   );
 }
 
@@ -115,10 +103,20 @@ function DetailItem({ label, value }: DetailItemProps) {
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-
-      <div className="mt-1 text-sm font-medium">
+      <div className="mt-1 break-words text-sm font-medium">
         {value}
       </div>
     </div>
   );
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
