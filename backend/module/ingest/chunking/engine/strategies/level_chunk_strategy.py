@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 from uuid import UUID
 
@@ -12,6 +13,9 @@ from module.ingest.chunking.engine.models.chunk import (
 from module.ingest.chunking.engine.models.document_extraction import (
     DocumentExtraction,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class LevelChunkStrategy(
@@ -38,7 +42,29 @@ class LevelChunkStrategy(
             )
         )
 
+        root_sections = len(
+            sections,
+        )
+        available_levels = _collect_section_levels(
+            sections,
+        )
+
+        logger.info(
+            "level_chunk start document_id=%s target_level=%s root_sections=%s",
+            extraction.document_id,
+            self.level,
+            root_sections,
+        )
+        print(
+            "level_chunk start "
+            f"document_id={extraction.document_id} "
+            f"target_level={self.level} "
+            f"root_sections={root_sections}",
+            flush=True,
+        )
+
         sequence = 0
+        matched_sections = 0
 
         for section in sections:
 
@@ -49,6 +75,7 @@ class LevelChunkStrategy(
                 ),
                 path_stack=[],
             ):
+                matched_sections += 1
 
                 chunk.sequence = (
                     sequence
@@ -57,6 +84,41 @@ class LevelChunkStrategy(
                 sequence += 1
 
                 yield chunk
+
+        logger.info(
+            "level_chunk done document_id=%s target_level=%s "
+            "matched_sections=%s chunks=%s",
+            extraction.document_id,
+            self.level,
+            matched_sections,
+            sequence,
+        )
+        print(
+            "level_chunk done "
+            f"document_id={extraction.document_id} "
+            f"target_level={self.level} "
+            f"matched_sections={matched_sections} "
+            f"chunks={sequence}",
+            flush=True,
+        )
+
+        if sequence == 0:
+            logger.warning(
+                "level_chunk produced_zero_chunks document_id=%s "
+                "target_level=%s root_sections=%s available_levels=%s",
+                extraction.document_id,
+                self.level,
+                root_sections,
+                available_levels,
+            )
+            print(
+                "level_chunk produced_zero_chunks "
+                f"document_id={extraction.document_id} "
+                f"target_level={self.level} "
+                f"root_sections={root_sections} "
+                f"available_levels={available_levels}",
+                flush=True,
+            )
 
     def _walk(
         self,
@@ -211,3 +273,53 @@ class LevelChunkStrategy(
         return "\n\n".join(
             parts
         )
+
+
+def _collect_section_levels(
+    sections: list,
+) -> list:
+
+    levels = set()
+    stack = list(
+        reversed(
+            sections,
+        )
+    )
+
+    while stack:
+        section = stack.pop()
+
+        if not isinstance(
+            section,
+            dict,
+        ):
+            continue
+
+        level = section.get(
+            "level",
+        )
+
+        if level is not None:
+            levels.add(
+                level,
+            )
+
+        children = section.get(
+            "children",
+            [],
+        )
+
+        if isinstance(
+            children,
+            list,
+        ):
+            stack.extend(
+                reversed(
+                    children,
+                )
+            )
+
+    return sorted(
+        levels,
+        key=str,
+    )

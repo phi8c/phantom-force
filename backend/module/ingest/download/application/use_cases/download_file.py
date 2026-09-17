@@ -1,5 +1,6 @@
 from datetime import datetime
 from datetime import timezone
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from module.ingest.download.domain.contracts.document_source import (
@@ -99,6 +100,38 @@ class DownloadFileUseCase:
             source = await self.document_source.open(
                 task.document_id,
             )
+            print(
+                "\n===== DOWNLOAD SOURCE OPENED START =====",
+                flush=True,
+            )
+            print(
+                f"task_id={task_id}",
+                flush=True,
+            )
+            print(
+                f"job_id={task.ingestion_job_id}",
+                flush=True,
+            )
+            print(
+                f"document_id={task.document_id}",
+                flush=True,
+            )
+            print(
+                f"file_name={source.file_name}",
+                flush=True,
+            )
+            print(
+                f"content_type={source.content_type}",
+                flush=True,
+            )
+            print(
+                f"declared_size_bytes={source.size_bytes}",
+                flush=True,
+            )
+            print(
+                "===== DOWNLOAD SOURCE OPENED END =====\n",
+                flush=True,
+            )
 
             storage_path = self._build_storage_path(
                 ingestion_job_id=(
@@ -111,11 +144,49 @@ class DownloadFileUseCase:
             stored_object = (
                 await self.object_storage.upload_stream(
                     path=storage_path,
-                    content=source.content,
+                    content=_debug_stream(
+                        content=source.content,
+                        label="DOWNLOAD SOURCE STREAM",
+                        task_id=task_id,
+                        job_id=task.ingestion_job_id,
+                        document_id=task.document_id,
+                    ),
                     content_type=(
                         source.content_type
                     ),
                 )
+            )
+            print(
+                "\n===== DOWNLOAD STORED OBJECT START =====",
+                flush=True,
+            )
+            print(
+                f"task_id={task_id}",
+                flush=True,
+            )
+            print(
+                f"job_id={task.ingestion_job_id}",
+                flush=True,
+            )
+            print(
+                f"document_id={task.document_id}",
+                flush=True,
+            )
+            print(
+                f"path={stored_object.path}",
+                flush=True,
+            )
+            print(
+                f"content_type={stored_object.content_type}",
+                flush=True,
+            )
+            print(
+                f"stored_size_bytes={stored_object.size_bytes}",
+                flush=True,
+            )
+            print(
+                "===== DOWNLOAD STORED OBJECT END =====\n",
+                flush=True,
             )
 
             await self.storage_asset_repository.create(
@@ -268,3 +339,86 @@ class DownloadFileUseCase:
             f"{document_id}/"
             f"{safe_name}"
         )
+
+
+async def _debug_stream(
+    *,
+    content: AsyncIterator[bytes],
+    label: str,
+    task_id: UUID,
+    job_id: UUID,
+    document_id: UUID,
+) -> AsyncIterator[bytes]:
+
+    total_bytes = 0
+    chunk_count = 0
+    preview = bytearray()
+
+    async for chunk in content:
+        chunk_count += 1
+        chunk_size = len(
+            chunk,
+        )
+        total_bytes += chunk_size
+
+        if len(
+            preview,
+        ) < 512:
+            preview.extend(
+                chunk[
+                    : 512 - len(
+                        preview,
+                    )
+                ]
+            )
+
+        print(
+            f"{label} chunk "
+            f"task_id={task_id} "
+            f"job_id={job_id} "
+            f"document_id={document_id} "
+            f"chunk_index={chunk_count} "
+            f"chunk_bytes={chunk_size} "
+            f"total_bytes={total_bytes}",
+            flush=True,
+        )
+
+        yield chunk
+
+    print(
+        f"\n===== {label} SUMMARY START =====",
+        flush=True,
+    )
+    print(
+        f"task_id={task_id}",
+        flush=True,
+    )
+    print(
+        f"job_id={job_id}",
+        flush=True,
+    )
+    print(
+        f"document_id={document_id}",
+        flush=True,
+    )
+    print(
+        f"chunks={chunk_count}",
+        flush=True,
+    )
+    print(
+        f"total_bytes={total_bytes}",
+        flush=True,
+    )
+    print(
+        f"preview_hex={preview.hex()}",
+        flush=True,
+    )
+    print(
+        "preview_text="
+        f"{preview.decode('utf-8', errors='replace')}",
+        flush=True,
+    )
+    print(
+        f"===== {label} SUMMARY END =====\n",
+        flush=True,
+    )

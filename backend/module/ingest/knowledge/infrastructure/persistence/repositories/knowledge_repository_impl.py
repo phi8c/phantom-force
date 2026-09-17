@@ -1508,14 +1508,14 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
 
         statement = insert(model_class).values(**values)
         excluded = statement.excluded
-        update_values = {
-            column_name: func.coalesce(
-                getattr(excluded, column_name),
-                getattr(model_class, column_name),
+        update_values = {}
+        for column_name in merge_columns:
+            column = getattr(model_class, column_name).property.columns[0]
+            update_values[column] = func.coalesce(
+                excluded[column.name],
+                column,
             )
-            for column_name in merge_columns
-        }
-        update_values["updated_at"] = func.now()
+        update_values[model_class.updated_at.property.columns[0]] = func.now()
 
         statement = (
             statement.on_conflict_do_update(

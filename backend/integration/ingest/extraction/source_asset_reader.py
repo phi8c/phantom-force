@@ -36,6 +36,35 @@ class StorageSourceAssetReader(
                 "SOURCE storage asset not found"
             )
 
+        print(
+            "\n===== SOURCE ASSET READER FOUND START =====",
+            flush=True,
+        )
+        print(
+            f"document_id={document_id}",
+            flush=True,
+        )
+        print(
+            f"file_name={asset.file_name}",
+            flush=True,
+        )
+        print(
+            f"storage_path={asset.storage_path}",
+            flush=True,
+        )
+        print(
+            f"content_type={asset.content_type}",
+            flush=True,
+        )
+        print(
+            f"size_bytes={asset.size_bytes}",
+            flush=True,
+        )
+        print(
+            "===== SOURCE ASSET READER FOUND END =====\n",
+            flush=True,
+        )
+
         return SourceAsset(
             document_id=document_id,
             file_name=asset.file_name,

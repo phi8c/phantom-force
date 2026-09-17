@@ -185,6 +185,10 @@ async def test_space_code_registry_upserts_use_same_atomic_conflict_target(
 
     sql = compile_postgresql(session.statement)
     assert "ON CONFLICT (knowledge_space_id, code) DO UPDATE" in sql
+    assert (
+        "metadata = coalesce(excluded.metadata, "
+        f"{session.statement.table.name}.metadata)"
+    ) in sql
     assert "RETURNING" in sql
 
 

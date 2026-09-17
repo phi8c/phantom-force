@@ -157,12 +157,64 @@ class ChunkDocumentUseCase:
                             )
                         )
                     )
+                    print(
+                        "\n===== CHUNKING FINAL CHUNKS RAW START =====",
+                        flush=True,
+                    )
+                    print(
+                        f"task_id={task_id}",
+                        flush=True,
+                    )
+                    print(
+                        f"job_id={task.ingestion_job_id}",
+                        flush=True,
+                    )
+                    print(
+                        f"document_id={task.document_id}",
+                        flush=True,
+                    )
+                    print(
+                        f"chunks_count={len(chunks)}",
+                        flush=True,
+                    )
+                    for chunk in chunks:
+                        print(
+                            chunk,
+                            flush=True,
+                        )
+                    print(
+                        "===== CHUNKING FINAL CHUNKS RAW END =====\n",
+                        flush=True,
+                    )
 
                     logger.info(
                         "chunking engine_done task_id=%s chunks=%s",
                         task_id,
                         len(chunks),
                     )
+                    print(
+                        "chunking engine_done "
+                        f"task_id={task_id} "
+                        f"job_id={task.ingestion_job_id} "
+                        f"document_id={task.document_id} "
+                        f"chunks={len(chunks)}",
+                        flush=True,
+                    )
+
+                    if not chunks:
+                        logger.warning(
+                            "chunking zero_chunks task_id=%s job_id=%s document_id=%s",
+                            task_id,
+                            task.ingestion_job_id,
+                            task.document_id,
+                        )
+                        print(
+                            "chunking zero_chunks "
+                            f"task_id={task_id} "
+                            f"job_id={task.ingestion_job_id} "
+                            f"document_id={task.document_id}",
+                            flush=True,
+                        )
 
                     batch = await (
                         self.chunk_batch_writer
@@ -304,6 +356,12 @@ class ChunkDocumentUseCase:
                 "chunking failed task_id=%s error=%s",
                 task_id,
                 exc,
+            )
+            print(
+                "chunking failed "
+                f"task_id={task_id} "
+                f"error={exc}",
+                flush=True,
             )
             await self.uow.rollback()
 

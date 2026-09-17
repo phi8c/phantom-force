@@ -114,11 +114,21 @@ class LLMClassificationEngine(
                 llm_result.model_code,
                 llm_result.finish_reason,
             )
+            print(
+                f"===== CLASSIFICATION RAW RESPONSE START ===== chunk_id={chunk.id}",
+                flush=True,
+            )
+            print(llm_result.content, flush=True)
+            print(
+                f"===== CLASSIFICATION RAW RESPONSE END ===== chunk_id={chunk.id}",
+                flush=True,
+            )
 
             raw_response = self._parse_json_response(
                 llm_result.content,
                 chunk.id,
             )
+            self._normalize_object_refs(raw_response, chunk.id)
 
             results.append(
                 ClassificationResult(
@@ -352,3 +362,56 @@ class LLMClassificationEngine(
             )
 
         return parsed
+
+    @staticmethod
+    def _normalize_object_refs(
+        response: dict[str, Any],
+        chunk_id,
+    ) -> None:
+        objects = response.get("objects")
+        information = response.get("information")
+        if not isinstance(objects, list) or not isinstance(information, list):
+            return
+
+        object_codes = set()
+        object_code_aliases = {}
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            object_code = obj.get("object_code")
+            canonical_code = obj.get("identifier_code") or object_code
+            if not isinstance(object_code, str) or not isinstance(canonical_code, str):
+                continue
+            object_codes.add(canonical_code)
+            if object_code in object_code_aliases:
+                object_code_aliases[object_code] = None
+            else:
+                object_code_aliases[object_code] = canonical_code
+
+        for item in information:
+            if not isinstance(item, dict):
+                continue
+            refs = item.get("object_refs")
+            if refs is None or not isinstance(refs, list):
+                continue
+
+            normalized = []
+            for ref in refs:
+                if isinstance(ref, dict):
+                    ref = ref.get("identifier_code") or ref.get("object_code")
+                if not isinstance(ref, str):
+                    raise ValueError(
+                        "Classification response information.object_refs "
+                        f"contains an invalid or undeclared object for chunk {chunk_id}"
+                    )
+                canonical_code = (
+                    ref if ref in object_codes else object_code_aliases.get(ref)
+                )
+                if canonical_code is None:
+                    raise ValueError(
+                        "Classification response information.object_refs "
+                        f"contains an invalid or undeclared object for chunk {chunk_id}"
+                    )
+                normalized.append(canonical_code)
+
+            item["object_refs"] = normalized
