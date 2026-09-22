@@ -3,9 +3,7 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.download.domain.contracts.download_dispatcher import (
-    DownloadDispatcher,
-)
+from module.ingest.download.composition import DownloadDispatcher
 
 
 class AzureDownloadDispatcher(

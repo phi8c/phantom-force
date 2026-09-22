@@ -3,13 +3,11 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.discovery.domain.contracts.discovery_dispatcher import (
-    DiscoveryDispatcher,
-)
+from module.ingest.extraction.composition import ExtractionDispatcher
 
 
-class AzureDiscoveryDispatcher(
-    DiscoveryDispatcher,
+class AzureExtractionDispatcher(
+    ExtractionDispatcher,
 ):
 
     def __init__(
@@ -23,14 +21,12 @@ class AzureDiscoveryDispatcher(
     async def dispatch(
         self,
         ingestion_job_id: UUID,
-        batch_size: int,
     ) -> None:
 
         payload = {
             "ingestion_job_id": str(
                 ingestion_job_id
             ),
-            "batch_size": batch_size,
         }
 
         sender = self.service_bus_client.get_queue_sender(

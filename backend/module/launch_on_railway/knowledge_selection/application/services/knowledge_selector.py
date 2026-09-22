@@ -1,6 +1,7 @@
 import json
 import logging
 from time import perf_counter
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from module.ai.llm.composition import LLMGateway
 from module.ingest.knowledge.composition import (
@@ -69,6 +70,7 @@ class KnowledgeSelector:
             question=question,
             knowledge_candidates=knowledge_candidates,
         )
+        print_chat_trace("KNOWLEDGE_SELECTION_INPUT", user_prompt)
         step_started_at = perf_counter()
         logger.info(
             "[KNOWLEDGE_SELECTION] llm_start user_prompt_chars=%s",
@@ -92,6 +94,7 @@ class KnowledgeSelector:
             llm_result.finish_reason,
             llm_result.usage,
         )
+        print_chat_trace("KNOWLEDGE_SELECTION_RAW_RESPONSE", llm_result.content)
         if not llm_result.content:
             raise ValueError(
                 "Empty knowledge selection response"
@@ -107,6 +110,7 @@ class KnowledgeSelector:
             raw_response.get("selections", []),
             knowledge_candidates=knowledge_candidates,
         )
+        print_chat_trace("KNOWLEDGE_SELECTION_PARSED", selections)
 
         logger.info(
             "[KNOWLEDGE_SELECTION] selected_request_ids=%s "
@@ -181,13 +185,8 @@ class KnowledgeSelector:
                     for item in candidate.available_fields
                 },
             )
-            if (
-                information_type_codes is None
-                or topic_codes is None
-                or field_codes is None
-            ):
+            if not any((information_type_codes, topic_codes, field_codes)):
                 continue
-
             constraints = raw_selection.get("constraints", {})
             if not isinstance(constraints, dict):
                 constraints = {}
@@ -208,16 +207,20 @@ class KnowledgeSelector:
     def _validated_codes(
         raw_codes,
         available_codes: set[str],
-    ) -> list[str] | None:
+    ) -> list[str]:
 
         if not isinstance(raw_codes, list):
-            return None
+            return []
 
         result = []
         for raw_code in raw_codes:
             code = str(raw_code)
             if code not in available_codes:
-                return None
+                logger.info(
+                    "[KNOWLEDGE_SELECTION] code_ignored code=%s",
+                    code,
+                )
+                continue
             if code not in result:
                 result.append(code)
         return result

@@ -3,6 +3,7 @@ from collections.abc import Awaitable
 from collections.abc import Callable
 from time import perf_counter
 from uuid import UUID
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from module.ingest.knowledge.application.dtos.knowledge_search_request import (
     KnowledgeSearchRequest,
@@ -109,6 +110,7 @@ class KnowledgeReader:
         request_vectors = await self._embed_seed_strings(
             request,
         )
+        print_chat_trace("SEED_VECTORS_BY_REQUEST", request_vectors)
 
         records = await self._repository.discover(
             knowledge_space_id=request.knowledge_space_id,
@@ -135,6 +137,7 @@ class KnowledgeReader:
             ],
             request_vectors=request_vectors,
         )
+        print_chat_trace("DISCOVERY_REPOSITORY_RECORDS", records)
 
         discovered_requests = [
             self._discovered_request(record)
@@ -226,6 +229,7 @@ class KnowledgeReader:
             topic_codes=request.selection.topic_codes,
             field_codes=request.selection.field_codes,
         )
+        print_chat_trace("RETRIEVAL_REPOSITORY_RECORDS", records)
 
         logger.info(
             "[KNOWLEDGE_RETRIEVAL] selection=%s information_count=%s",
@@ -275,6 +279,11 @@ class KnowledgeReader:
             texts.extend(item.information_field_seeds)
 
         unique_texts = list(dict.fromkeys(texts))
+        print_chat_trace("SEED_EMBEDDING_INPUT", {
+            "knowledge_space_id": request.knowledge_space_id,
+            "texts": texts,
+            "unique_texts": unique_texts,
+        })
         if not unique_texts:
             return []
 
@@ -288,6 +297,10 @@ class KnowledgeReader:
             request.knowledge_space_id,
         )
         vectors = await embedder.embed_texts(unique_texts)
+        print_chat_trace("SEED_EMBEDDING_OUTPUT", [
+            {"seed": text, "vector": vector}
+            for text, vector in zip(unique_texts, vectors, strict=True)
+        ])
         vector_by_text = dict(
             zip(unique_texts, vectors, strict=True),
         )

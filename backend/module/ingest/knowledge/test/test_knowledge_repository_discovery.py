@@ -88,7 +88,7 @@ async def test_discover_request_does_not_cartesian_product_dimensions():
         },
     )
 
-    assert repository.loaded_filter_count == 6
+    assert repository.loaded_filter_count == 2
     assert repository.code_registry_calls == [
         (
             KnowledgeInformationTypeModel.__name__,
@@ -112,6 +112,23 @@ async def test_discover_request_does_not_cartesian_product_dimensions():
             ],
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_discover_request_without_topic_uses_other_entry_points():
+    repository = RecordingKnowledgeRepository()
+
+    record = await repository._discover_request(
+        knowledge_space_id=uuid4(),
+        request={
+            "request_id": "knowledge_1",
+            "information_type_seeds": ["type_a"],
+            "information_field_seeds": ["field_a"],
+        },
+    )
+
+    assert record is not None
+    assert repository.loaded_filter_count == 2
 
 
 @pytest.mark.asyncio

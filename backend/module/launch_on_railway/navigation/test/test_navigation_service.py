@@ -223,6 +223,72 @@ async def test_navigation_retrieves_selected_requests_and_dedupes_information():
     ]
 
 
+@pytest.mark.asyncio
+async def test_topic_retrieval_keeps_all_information_and_prioritizes_selected_fields():
+    general_id = uuid4()
+    preferred_id = uuid4()
+    reader = RecordingKnowledgeReader(
+        discovery_result=KnowledgeDiscoveryResult(
+            requests=[
+                KnowledgeDiscoveredRequest(
+                    request_id="knowledge_1",
+                    matched_entry_points=KnowledgeMatchedEntryPoints(),
+                )
+            ]
+        ),
+        retrieval_results={
+            "knowledge_1": KnowledgeSearchResult(
+                items=[
+                    KnowledgeSearchItem(
+                        information_id=general_id,
+                        information_type_code="background",
+                        summary="General context",
+                        data={"scope": "all"},
+                    ),
+                    KnowledgeSearchItem(
+                        information_id=preferred_id,
+                        information_type_code="policy",
+                        summary="Selected detail",
+                        data={"ttl": 30},
+                    ),
+                ]
+            )
+        },
+    )
+    selector = RecordingKnowledgeSelector(
+        selections=[
+            KnowledgeSelection(
+                request_id="knowledge_1",
+                information_type_codes=["policy"],
+                topic_codes=["topic_a"],
+                field_codes=["ttl"],
+            )
+        ]
+    )
+
+    result = await NavigationService(
+        knowledge_reader=reader,
+        knowledge_selector=selector,
+    ).navigate(
+        knowledge_space_id=uuid4(),
+        question="Summarize the topic",
+        analysis=QueryAnalysisResult(
+            intent="retrieve_information",
+            knowledge_requests=[KnowledgeRequest(need="Topic overview")],
+            raw_response={},
+        ),
+    )
+
+    request = reader.retrieval_requests[0].selection
+    assert request.topic_codes == ["topic_a"]
+    assert request.information_type_codes == []
+    assert request.field_codes == []
+    assert [item.information_id for item in result.items] == [
+        str(preferred_id),
+        str(general_id),
+    ]
+
+
 class RecordingKnowledgeReader:
     def __init__(
         self,

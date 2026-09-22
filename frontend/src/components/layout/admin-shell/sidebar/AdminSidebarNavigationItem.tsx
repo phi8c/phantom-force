@@ -24,7 +24,7 @@ export function AdminSidebarNavigationItem({
         "group/item flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          : "text-sidebar-foreground hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" />

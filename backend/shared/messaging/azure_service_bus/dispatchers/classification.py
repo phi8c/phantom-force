@@ -3,13 +3,11 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.extraction.domain.contracts.extraction_dispatcher import (
-    ExtractionDispatcher,
-)
+from module.ingest.classification.composition import ClassificationDispatcher
 
 
-class AzureExtractionDispatcher(
-    ExtractionDispatcher,
+class AzureClassificationDispatcher(
+    ClassificationDispatcher,
 ):
 
     def __init__(
@@ -20,7 +18,7 @@ class AzureExtractionDispatcher(
         self.service_bus_client = service_bus_client
         self.queue_name = queue_name
 
-    async def dispatch(
+    async def dispatch_job(
         self,
         ingestion_job_id: UUID,
     ) -> None:

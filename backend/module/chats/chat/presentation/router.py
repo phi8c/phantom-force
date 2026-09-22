@@ -1,6 +1,7 @@
 from uuid import UUID
 import logging
 from time import perf_counter
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -70,6 +71,7 @@ async def chat(
         request.knowledge_space_id,
         len(request.question),
     )
+    print_chat_trace("REQUEST", request.model_dump(mode="json"))
 
     async with get_session() as session:
 
@@ -126,9 +128,11 @@ async def chat(
         int((perf_counter() - started_at) * 1000),
     )
 
-    return ChatHttpResponse(
+    response = ChatHttpResponse(
         answer=result.answer,
         intent=result.intent,
         knowledge_requests=result.knowledge_requests,
         information=result.information,
     )
+    print_chat_trace("HTTP_RESPONSE", response.model_dump(mode="json"))
+    return response

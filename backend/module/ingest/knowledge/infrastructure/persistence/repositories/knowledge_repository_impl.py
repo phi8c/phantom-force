@@ -4,6 +4,7 @@ from datetime import timezone
 from time import perf_counter
 from typing import Any
 from uuid import UUID
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from sqlalchemy import func
 from sqlalchemy import or_
@@ -797,10 +798,13 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             )
             return None
 
+        topic_filters = self._topic_filters(
+            [topic.code for topic in matched_entry_points.topics]
+        )
         step_started_at = perf_counter()
         rows = await self._load_reachable_structure_rows(
             knowledge_space_id=knowledge_space_id,
-            base_filters=base_filters,
+            base_filters=topic_filters or base_filters,
         )
         logger.info(
             "[KNOWLEDGE_REPOSITORY] discover_request_reachable_loaded request_id=%s elapsed_ms=%s row_count=%s",
@@ -918,25 +922,37 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                     self._object_record(model),
                 )
 
-        for vector in (object_vectors or {}).values():
-            candidates.extend(
-                await self._vector_object_candidates(
-                    knowledge_space_id=knowledge_space_id,
-                    vector=vector,
-                    column=KnowledgeObjectModel.object_embedding,
-                    seen=seen,
-                )
-            )
+        print_chat_trace("OBJECT_EXACT_MATCHES", {
+            "object_seeds": object_codes,
+            "identifier_seeds": identifier_codes,
+            "matches": candidates,
+        })
 
-        for vector in (identifier_vectors or {}).values():
-            candidates.extend(
-                await self._vector_object_candidates(
-                    knowledge_space_id=knowledge_space_id,
-                    vector=vector,
-                    column=KnowledgeObjectModel.identifier_embedding,
-                    seen=seen,
-                )
+        for seed, vector in (object_vectors or {}).items():
+            matches = await self._vector_object_candidates(
+                knowledge_space_id=knowledge_space_id,
+                vector=vector,
+                column=KnowledgeObjectModel.object_embedding,
+                seen=seen,
             )
+            print_chat_trace("OBJECT_VECTOR_MATCHES", {
+                "seed": seed,
+                "matches": matches,
+            })
+            candidates.extend(matches)
+
+        for seed, vector in (identifier_vectors or {}).items():
+            matches = await self._vector_object_candidates(
+                knowledge_space_id=knowledge_space_id,
+                vector=vector,
+                column=KnowledgeObjectModel.identifier_embedding,
+                seen=seen,
+            )
+            print_chat_trace("IDENTIFIER_VECTOR_MATCHES", {
+                "seed": seed,
+                "matches": matches,
+            })
+            candidates.extend(matches)
 
         logger.info(
             "[KNOWLEDGE_REPOSITORY] match_objects_from_seeds space=%s object_seed_count=%s identifier_seed_count=%s candidate_count=%s",
@@ -982,16 +998,26 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 seen.add(code)
                 candidates.append(record_factory(model))
 
-        for vector in (vectors or {}).values():
-            candidates.extend(
-                await self._vector_code_candidates(
-                    model_class=model_class,
-                    record_factory=record_factory,
-                    knowledge_space_id=knowledge_space_id,
-                    vector=vector,
-                    seen=seen,
-                )
+        print_chat_trace("REGISTRY_EXACT_MATCHES", {
+            "registry": model_class.__tablename__,
+            "seeds": codes,
+            "matches": candidates,
+        })
+
+        for seed, vector in (vectors or {}).items():
+            matches = await self._vector_code_candidates(
+                model_class=model_class,
+                record_factory=record_factory,
+                knowledge_space_id=knowledge_space_id,
+                vector=vector,
+                seen=seen,
             )
+            print_chat_trace("REGISTRY_VECTOR_MATCHES", {
+                "registry": model_class.__tablename__,
+                "seed": seed,
+                "matches": matches,
+            })
+            candidates.extend(matches)
 
         logger.info(
             "[KNOWLEDGE_REPOSITORY] match_code_registry table=%s space=%s seed_count=%s candidate_count=%s",

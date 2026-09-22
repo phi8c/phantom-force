@@ -1,4 +1,4 @@
-from shared.messaging.azure_service_bus.composition import (
+from shared.messaging.azure_service_bus.composition.factory import (
     IngestDispatchers,
     IngestQueueClients,
     close_ingest_queue_clients,

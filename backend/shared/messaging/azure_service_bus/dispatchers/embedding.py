@@ -3,9 +3,7 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.embedding.domain.contracts.embedding_dispatcher import (
-    EmbeddingDispatcher,
-)
+from module.ingest.embedding.composition import EmbeddingDispatcher
 
 
 class AzureEmbeddingDispatcher(

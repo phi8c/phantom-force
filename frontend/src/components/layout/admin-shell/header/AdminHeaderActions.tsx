@@ -21,7 +21,7 @@ export function AdminHeaderActions() {
         <Bell />
       </Button>
 
-      <div className="ml-2 flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+      <div className="ml-2 flex size-8 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
         A
       </div>
     </div>

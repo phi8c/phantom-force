@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phantom Force Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #fdf5e6;
+            --text-color: #5c2b2b;
+            --border-color: #e3c4c4;
+            --sidebar-active: #fbb6b6;
+            --card-bg: #FFFFFF;
+            --card-inner-bg: #FFFFFF;
+            --white: #ffffff;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 260px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .logo-circle {
+            width: 32px;
+            height: 32px;
+            background-color: var(--text-color);
+            color: var(--bg-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .nav-menu {
+            list-style: none;
+            padding: 0 10px;
+            flex: 1;
+        }
+
+        .nav-item {
+            padding: 12px 16px;
+            margin-bottom: 4px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(251, 182, 182, 0.4);
+        }
+
+        .nav-item.active {
+            background-color: var(--sidebar-active);
+            font-weight: 500;
+        }
+
+        .nav-item i.fa-chevron-right {
+            margin-left: auto;
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-info .name {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .user-info .role {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        /* --- Main Content --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- Top Header --- */
+        .top-header {
+            padding: 16px 24px 0 24px;
+        }
+
+        .header-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .header-title h1 {
+            font-size: 1.2rem;
+            margin-bottom: 4px;
+        }
+
+        .header-title p {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 1.2rem;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            background-color: var(--text-color);
+            color: var(--bg-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            padding: 8px 0;
+            cursor: pointer;
+            font-size: 0.95rem;
+            color: var(--text-color);
+            opacity: 0.8;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab.active {
+            opacity: 1;
+            font-weight: 600;
+            border-bottom: 2px solid var(--text-color);
+        }
+
+        /* --- Dashboard Body --- */
+        .dashboard-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .stream-title {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .stream-title h2 {
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stream-title h2::before {
+            content: '';
+            display: block;
+            width: 10px;
+            height: 10px;
+            background-color: #d9534f;
+            border-radius: 50%;
+        }
+
+        .stream-id {
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            background-color: var(--sidebar-active);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 6px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .btn.dark {
+            background-color: #c97979;
+            color: var(--white);
+            border-color: #b56060;
+        }
+
+        /* --- Stats Row --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 24px;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.2);
+        }
+
+        .stat-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        /* --- Pipeline Row --- */
+        .pipeline-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 16px;
+        }
+
+        .pipeline-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.2);
+        }
+
+        .pipeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+        }
+
+        .badge {
+            background-color: var(--white);
+            color: var(--card-inner-bg);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+        }
+
+        .pipeline-stats {
+            display: flex;
+            justify-content: space-between;
+            text-align: center;
+            font-size: 0.8rem;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 4px;
+        }
+
+        .pipeline-stat-item {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        
+        .pipeline-stat-item strong {
+            font-size: 0.9rem;
+        }
+
+        .pipeline-status {
+            background-color: var(--card-inner-bg);
+            border-radius: 6px;
+            height: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.95rem;
+            opacity: 0.9;
+            position: relative;
+        }
+
+        /* Star styling for the last card */
+        .star-icon {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: rgba(255,255,255,0.5);
+            font-size: 2rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div>
+            <div class="sidebar-header">
+                <div class="logo-circle">P</div>
+                <span>Phantom Force</span>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active">
+                    <i class="fa-solid fa-border-all"></i> Overview
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-regular fa-folder"></i> Sources
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-regular fa-file-alt"></i> Documents
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-solid fa-share-nodes"></i> Ingestion
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-solid fa-microchip"></i> Workers
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-solid fa-chart-bar"></i> Models
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-solid fa-project-diagram"></i> Graph
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-regular fa-comment-dots"></i> Chat
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+                <li class="nav-item">
+                    <i class="fa-solid fa-cog"></i> Settings
+                    <i class="fa-solid fa-chevron-right"></i>
+                </li>
+            </ul>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="logo-circle">N</div>
+            <div class="user-info">
+                <span class="name">Administrator</span>
+                <span class="role">Admin</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Topbar -->
+        <header class="top-header">
+            <div class="header-top-row">
+                <div class="header-title">
+                    <h1>Administration</h1>
+                    <p>Manage your RAG platform</p>
+                </div>
+                <div class="header-actions">
+                    <i class="fa-solid fa-search"></i>
+                    <i class="fa-regular fa-bell"></i>
+                    <div class="avatar">A</div>
+                </div>
+            </div>
+            <nav class="tabs">
+                <div class="tab">Overview</div>
+                <div class="tab">Ingestion Jobs</div>
+                <div class="tab active">Live Stream Processing</div>
+                <div class="tab">Schedules</div>
+                <div class="tab">History</div>
+            </nav>
+        </header>
+
+        <!-- Dashboard Body -->
+        <div class="dashboard-body">
+            
+            <div class="section-header">
+                <div class="stream-title">
+                    <h2>Live Stream Processing</h2>
+                    <span class="stream-id">d2b5cddd-3def-46ef-83eb-c4188b306550</span>
+                </div>
+                <div class="btn-group">
+                    <button class="btn">Refresh</button>
+                    <button class="btn dark">Jobs</button>
+                </div>
+            </div>
+
+            <!-- 4 Top Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <i class="fa-regular fa-file"></i> Files
+                    </div>
+                    <div class="stat-value">1/1</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <i class="fa-solid fa-chart-line"></i> Processing batches
+                    </div>
+                    <div class="stat-value">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <i class="fa-regular fa-check-circle"></i> Completed batches
+                    </div>
+                    <div class="stat-value">1</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Failed
+                    </div>
+                    <div class="stat-value">0</div>
+                </div>
+            </div>
+
+            <!-- 6 Pipeline Cards -->
+            <div class="pipeline-grid">
+                <!-- Card 1 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span>DISCOVERY</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">Idle</div>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span>DOWNLOAD</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">Idle</div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span>EXTRACTION</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">Idle</div>
+                </div>
+
+                <!-- Card 4 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span>CHUNKING</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">Idle</div>
+                </div>
+
+                <!-- Card 5 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span>EMBEDDING</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">Idle</div>
+                </div>
+
+                <!-- Card 6 -->
+                <div class="pipeline-card">
+                    <div class="pipeline-header">
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">CLASSIFICAT...</span>
+                        <div class="badge">1</div>
+                    </div>
+                    <div class="pipeline-stats">
+                        <div class="pipeline-stat-item"><strong>0</strong>Run</div>
+                        <div class="pipeline-stat-item"><strong>1</strong>Done</div>
+                        <div class="pipeline-stat-item"><strong>0</strong>Fail</div>
+                    </div>
+                    <div class="pipeline-status">
+                        Idle
+                        <i class="fa-solid fa-sparkles star-icon"></i>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>

@@ -2,7 +2,7 @@ export function AdminSidebarFooter() {
   return (
     <div className="border-t p-3">
       <div className="flex items-center gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-sm font-medium text-sidebar-primary-foreground">
           A
         </div>
 

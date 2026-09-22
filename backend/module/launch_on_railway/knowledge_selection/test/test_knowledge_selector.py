@@ -169,6 +169,33 @@ def test_parse_selections_accepts_request_id_and_validates_candidates():
     ]
 
 
+def test_parse_selections_keeps_topic_when_other_codes_are_invalid():
+    candidate = KnowledgeDiscoveredRequest(
+        request_id="knowledge_1",
+        matched_entry_points=KnowledgeMatchedEntryPoints(),
+        available_information_types=[KnowledgeCodeStructure(code="policy")],
+        available_topics=[KnowledgeCodeStructure(code="cache_policy")],
+        available_fields=[KnowledgeCodeStructure(code="ttl")],
+    )
+
+    selections = KnowledgeSelector._parse_selections(
+        [
+            {
+                "request_id": "knowledge_1",
+                "information_type_codes": ["policy", "unknown_type"],
+                "topic_codes": ["cache_policy"],
+                "field_codes": ["ttl", "policy"],
+            }
+        ],
+        knowledge_candidates=[candidate],
+    )
+
+    assert len(selections) == 1
+    assert selections[0].topic_codes == ["cache_policy"]
+    assert selections[0].information_type_codes == ["policy"]
+    assert selections[0].field_codes == ["ttl"]
+
+
 def test_parse_selections_can_select_subset_and_multiple_topics():
     candidates = [
         KnowledgeDiscoveredRequest(

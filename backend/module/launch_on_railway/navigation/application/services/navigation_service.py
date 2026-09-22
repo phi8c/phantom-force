@@ -1,6 +1,7 @@
 import logging
 from time import perf_counter
 from uuid import UUID
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from module.ingest.knowledge.composition import (
     KnowledgeDiscoveryRequest,
@@ -56,34 +57,35 @@ class NavigationService:
 
         step_started_at = perf_counter()
         logger.info("[LR_NAVIGATION] discovery_start")
-        discovery = await self._knowledge_reader.discover(
-            KnowledgeDiscoveryRequest(
-                knowledge_space_id=knowledge_space_id,
-                items=[
-                    KnowledgeDiscoveryRequestItem(
-                        request_id=f"knowledge_{index + 1}",
-                        need=request.need,
-                        document_type_seeds=(
-                            request.document_type_seeds
-                        ),
-                        head_seeds=request.head_seeds,
-                        topic_seeds=request.topic_seeds,
-                        object_seeds=request.object_seeds,
-                        identifier_seeds=request.identifier_seeds,
-                        information_type_seeds=(
-                            request.information_type_seeds
-                        ),
-                        information_field_seeds=(
-                            request.information_field_seeds
-                        ),
-                        constraints=request.constraints,
-                    )
-                    for index, request in enumerate(
-                        analysis.knowledge_requests
-                    )
-                ],
-            )
+        discovery_request = KnowledgeDiscoveryRequest(
+            knowledge_space_id=knowledge_space_id,
+            items=[
+                KnowledgeDiscoveryRequestItem(
+                    request_id=f"knowledge_{index + 1}",
+                    need=request.need,
+                    document_type_seeds=(
+                        request.document_type_seeds
+                    ),
+                    head_seeds=request.head_seeds,
+                    topic_seeds=request.topic_seeds,
+                    object_seeds=request.object_seeds,
+                    identifier_seeds=request.identifier_seeds,
+                    information_type_seeds=(
+                        request.information_type_seeds
+                    ),
+                    information_field_seeds=(
+                        request.information_field_seeds
+                    ),
+                    constraints=request.constraints,
+                )
+                for index, request in enumerate(
+                    analysis.knowledge_requests
+                )
+            ],
         )
+        print_chat_trace("DISCOVERY_REQUEST", discovery_request)
+        discovery = await self._knowledge_reader.discover(discovery_request)
+        print_chat_trace("DISCOVERY_RESULT", discovery)
         logger.info(
             "[LR_NAVIGATION] discovery_done elapsed_ms=%s discovered_request_count=%s",
             int((perf_counter() - step_started_at) * 1000),
@@ -129,21 +131,23 @@ class NavigationService:
                 "[LR_NAVIGATION] retrieval_start request_id=%s",
                 selection.request_id,
             )
-            result = await self._knowledge_reader.retrieve(
-                KnowledgeRetrievalRequest(
-                    knowledge_space_id=knowledge_space_id,
-                    discovered_request=discovered_request,
-                    selection=KnowledgeRetrievalSelection(
-                        request_id=selection.request_id,
-                        information_type_codes=(
-                            selection.information_type_codes
-                        ),
-                        topic_codes=selection.topic_codes,
-                        field_codes=selection.field_codes,
-                        constraints=selection.constraints,
+            topic_selected = bool(selection.topic_codes)
+            retrieval_request = KnowledgeRetrievalRequest(
+                knowledge_space_id=knowledge_space_id,
+                discovered_request=discovered_request,
+                selection=KnowledgeRetrievalSelection(
+                    request_id=selection.request_id,
+                    information_type_codes=(
+                        [] if topic_selected else selection.information_type_codes
                     ),
-                )
+                    topic_codes=selection.topic_codes,
+                    field_codes=[] if topic_selected else selection.field_codes,
+                    constraints=selection.constraints,
+                ),
             )
+            print_chat_trace("RETRIEVAL_REQUEST", retrieval_request)
+            result = await self._knowledge_reader.retrieve(retrieval_request)
+            print_chat_trace("RETRIEVAL_RESULT", result)
             logger.info(
                 "[LR_NAVIGATION] retrieval_done request_id=%s elapsed_ms=%s item_count=%s",
                 selection.request_id,
@@ -151,7 +155,22 @@ class NavigationService:
                 len(result.items),
             )
 
-            for item in result.items:
+            preferred_types = set(selection.information_type_codes)
+            preferred_fields = set(selection.field_codes)
+            ranked_items = (
+                sorted(
+                    result.items,
+                    key=lambda item: (
+                        item.information_type_code in preferred_types,
+                        bool(preferred_fields.intersection(item.data or {})),
+                    ),
+                    reverse=True,
+                )
+                if topic_selected
+                else result.items
+            )
+
+            for item in ranked_items:
                 information_id = str(item.information_id)
                 if information_id in seen_information_ids:
                     continue

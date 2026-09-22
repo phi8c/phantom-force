@@ -1,6 +1,7 @@
 import json
 import logging
 from time import perf_counter
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -63,6 +64,7 @@ class ChatService:
                 question=request.question,
             )
         )
+        print_chat_trace("QUERY_ANALYSIS_RESULT", analysis)
         logger.info(
             "[CHAT_SERVICE] query_analysis_done elapsed_ms=%s intent=%s knowledge_request_count=%s",
             int((perf_counter() - step_started_at) * 1000),
@@ -78,6 +80,7 @@ class ChatService:
             question=request.question,
             analysis=analysis,
         )
+        print_chat_trace("NAVIGATION_RESULT", navigation)
         logger.info(
             "[CHAT_SERVICE] navigation_done elapsed_ms=%s information_count=%s",
             int((perf_counter() - step_started_at) * 1000),
@@ -119,6 +122,7 @@ class ChatService:
             question=request.question,
             navigation=navigation,
         )
+        print_chat_trace("ANSWER_GENERATION_INPUT", answer_prompt)
         logger.info(
             "[CHAT_SERVICE] answer_generation_start user_prompt_chars=%s",
             len(answer_prompt),
@@ -137,6 +141,7 @@ class ChatService:
             llm_result.finish_reason,
             llm_result.usage,
         )
+        print_chat_trace("ANSWER_GENERATION_RAW_RESPONSE", llm_result.content)
 
         if not llm_result.content:
             raise ValueError(
@@ -188,6 +193,7 @@ class ChatService:
             "[CHAT_SERVICE] done elapsed_ms=%s",
             int((perf_counter() - started_at) * 1000),
         )
+        print_chat_trace("CHAT_RESPONSE", response)
         return response
 
     @staticmethod

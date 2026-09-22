@@ -1,6 +1,7 @@
 import json
 import logging
 from time import perf_counter
+from shared.logging.chat_diagnostics import print_chat_trace
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -93,6 +94,7 @@ class QueryAnalyzer:
             llm_result.finish_reason,
             llm_result.usage,
         )
+        print_chat_trace("QUERY_ANALYSIS_RAW_RESPONSE", llm_result.content)
 
         if not llm_result.content:
             raise ValueError(
@@ -109,6 +111,10 @@ class QueryAnalyzer:
         knowledge_requests = self._parse_knowledge_requests(
             result.get("knowledge_requests", []),
         )
+        print_chat_trace("QUERY_ANALYSIS_PARSED_SEEDS", {
+            "intent": result.get("intent", ""),
+            "knowledge_requests": knowledge_requests,
+        })
 
         logger.info(
             "[QUERY_ANALYSIS] question=%s intent=%s knowledge_request_count=%s knowledge_requests=%s",
