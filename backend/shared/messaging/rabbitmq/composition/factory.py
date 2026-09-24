@@ -31,6 +31,15 @@ class RabbitMQConsumerResources:
         await self.transport.close()
 
 
+@dataclass(frozen=True, slots=True)
+class RabbitMQProducerResources:
+    dispatchers: IngestDispatchers
+    transport: RabbitMQTransport
+
+    async def close(self) -> None:
+        await self.transport.close()
+
+
 async def create_rabbitmq_consumers() -> RabbitMQConsumerResources:
     configuration = _settings()
     transport = RabbitMQTransport(configuration.RABBITMQ_URL)
@@ -95,3 +104,40 @@ async def create_rabbitmq_dispatchers(
             configuration.RABBITMQ_CLASSIFY_QUEUE,
         ),
     )
+
+
+async def create_rabbitmq_producer() -> RabbitMQProducerResources:
+    configuration = _settings()
+    transport = RabbitMQTransport(configuration.RABBITMQ_URL)
+    try:
+        publisher = await transport.create_publisher()
+        dispatchers = IngestDispatchers(
+            discovery=RabbitMQDiscoveryDispatcher(
+                publisher,
+                configuration.RABBITMQ_DISCOVERY_QUEUE,
+            ),
+            download=RabbitMQDownloadDispatcher(
+                publisher,
+                configuration.RABBITMQ_DOWNLOAD_QUEUE,
+            ),
+            extraction=RabbitMQExtractionDispatcher(
+                publisher,
+                configuration.RABBITMQ_EXTRACT_QUEUE,
+            ),
+            chunking=RabbitMQChunkingDispatcher(
+                publisher,
+                configuration.RABBITMQ_CHUNK_QUEUE,
+            ),
+            embedding=RabbitMQEmbeddingDispatcher(
+                publisher,
+                configuration.RABBITMQ_EMBED_QUEUE,
+            ),
+            classification=RabbitMQClassificationDispatcher(
+                publisher,
+                configuration.RABBITMQ_CLASSIFY_QUEUE,
+            ),
+        )
+    except Exception:
+        await transport.close()
+        raise
+    return RabbitMQProducerResources(dispatchers, transport)

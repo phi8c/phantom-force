@@ -8,6 +8,7 @@ from uuid import uuid4
 from shared.messaging.rabbitmq.composition.factory import (
     create_rabbitmq_consumers,
     create_rabbitmq_dispatchers,
+    create_rabbitmq_producer,
 )
 
 
@@ -86,6 +87,25 @@ class RabbitMQCompositionTests(unittest.IsolatedAsyncioTestCase):
             resources.consumers.discovery,
             "consumer:discovery-queue",
         )
+
+    async def test_producer_creates_publisher_without_consumers(self) -> None:
+        with (
+            patch(
+                "shared.messaging.rabbitmq.composition.factory._settings",
+                return_value=fake_settings(),
+            ),
+            patch(
+                "shared.messaging.rabbitmq.composition.factory.RabbitMQTransport",
+                FakeTransport,
+            ),
+        ):
+            resources = await create_rabbitmq_producer()
+
+        transport = FakeTransport.instances[0]
+        self.assertEqual(transport.consumer_queues, [])
+
+        await resources.close()
+        self.assertTrue(transport.closed)
 
     async def test_dispatchers_use_the_matching_queue_names(self) -> None:
         with (

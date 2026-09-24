@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 from shared.messaging.azure_service_bus.dispatchers import (
@@ -11,6 +13,9 @@ from shared.messaging.azure_service_bus.dispatchers import (
     AzureDownloadDispatcher,
     AzureEmbeddingDispatcher,
     AzureExtractionDispatcher,
+)
+from shared.messaging.azure_service_bus.composition.factory import (
+    create_azure_producer,
 )
 
 
@@ -46,6 +51,30 @@ def payloads(client: FakeServiceBusClient) -> list[tuple[str, dict]]:
 
 
 class AzureDispatcherRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_producer_does_not_create_queue_receivers(self) -> None:
+        client = MagicMock()
+        client.close = AsyncMock()
+
+        with patch(
+            "shared.messaging.azure_service_bus.composition.factory.create_service_bus_client",
+            return_value=client,
+        ), patch(
+            "shared.messaging.azure_service_bus.composition.factory._settings",
+            return_value=SimpleNamespace(
+                AZURE_SERVICE_BUS_QUEUE_NAME="discovery",
+                AZURE_SERVICE_BUS_DOWNLOAD_QUEUE="download",
+                AZURE_SERVICE_BUS_EXTRACT_QUEUE="extraction",
+                AZURE_SERVICE_BUS_CHUNK_QUEUE="chunking",
+                AZURE_SERVICE_BUS_EMBED_QUEUE="embedding",
+                AZURE_SERVICE_BUS_CLASSIFY_QUEUE="classification",
+            ),
+        ):
+            resources = await create_azure_producer()
+
+        client.get_queue_receiver.assert_not_called()
+        await resources.close()
+        client.close.assert_awaited_once_with()
+
     async def test_all_azure_payloads_remain_unchanged(self) -> None:
         client = FakeServiceBusClient()
         job_id = UUID("11111111-2222-3333-4444-555555555555")

@@ -49,6 +49,15 @@ class IngestDispatchers:
 
 
 @dataclass(frozen=True, slots=True)
+class IngestProducer:
+    dispatchers: IngestDispatchers
+    _close_callback: CloseCallback = field(repr=False)
+
+    async def close(self) -> None:
+        await self._close_callback()
+
+
+@dataclass(frozen=True, slots=True)
 class IngestMessaging:
     consumers: IngestConsumers
     dispatchers: IngestDispatchers

@@ -17,7 +17,7 @@ from bootstrap.modules import (
     start_existing_ingestion_job_use_case_scope,
     start_ingestion_use_case_scope,
 )
-from bootstrap.queues import create_ingest_messaging
+from bootstrap.queues import create_ingest_producer
 from module.ingest.config.application.dtos.start_ingestion import (
     StartIngestionCommand,
 )
@@ -317,7 +317,7 @@ async def save_ingestion_job_scope(
 async def create_and_start_ingestion(
     request: CreateIngestionRequest,
 ):
-    messaging = await create_ingest_messaging()
+    messaging = await create_ingest_producer()
 
     try:
         dispatchers = messaging.dispatchers
@@ -387,7 +387,7 @@ async def start_existing_ingestion(
     ingestion_job_id: UUID,
     request: StartIngestionRequest,
 ):
-    messaging = await create_ingest_messaging()
+    messaging = await create_ingest_producer()
 
     try:
         dispatchers = messaging.dispatchers

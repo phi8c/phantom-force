@@ -11,6 +11,7 @@ from shared.messaging.composition import (
     IngestConsumers,
     IngestDispatchers,
     IngestMessaging,
+    IngestProducer,
 )
 from shared.messaging.contracts import QueueRoutingResolver
 from shared.messaging.routing import (
@@ -43,10 +44,8 @@ async def create_ingest_messaging() -> IngestMessaging:
                 RABBITMQ: rabbitmq.consumers,
             }
         )
-        resolver = ScopedQueueRoutingResolver(_queue_routing_resolver_scope)
-        dispatchers = create_routing_dispatchers(
-            resolver,
-            MessagingProviderRegistry(provider_dispatchers),
+        dispatchers = _create_provider_aware_dispatchers(
+            provider_dispatchers
         )
     except Exception:
         await resources.close()
@@ -56,6 +55,42 @@ async def create_ingest_messaging() -> IngestMessaging:
         consumers=consumers,
         dispatchers=dispatchers,
         _close_callback=resources.close,
+    )
+
+
+async def create_ingest_producer() -> IngestProducer:
+    azure = await _create_azure_producer()
+    try:
+        rabbitmq = await _create_rabbitmq_producer()
+    except Exception:
+        await azure.close()
+        raise
+
+    resources = MessagingResourceGroup([azure.close, rabbitmq.close])
+    try:
+        dispatchers = _create_provider_aware_dispatchers(
+            {
+                AZURE_SERVICE_BUS: azure.dispatchers,
+                RABBITMQ: rabbitmq.dispatchers,
+            }
+        )
+    except Exception:
+        await resources.close()
+        raise
+
+    return IngestProducer(
+        dispatchers=dispatchers,
+        _close_callback=resources.close,
+    )
+
+
+def _create_provider_aware_dispatchers(
+    provider_dispatchers: dict[str, IngestDispatchers],
+) -> IngestDispatchers:
+    resolver = ScopedQueueRoutingResolver(_queue_routing_resolver_scope)
+    return create_routing_dispatchers(
+        resolver,
+        MessagingProviderRegistry(provider_dispatchers),
     )
 
 
@@ -143,9 +178,35 @@ async def _create_rabbitmq_messaging() -> IngestMessaging:
     )
 
 
+async def _create_azure_producer() -> IngestProducer:
+    from shared.messaging.azure_service_bus.composition import (
+        create_azure_producer,
+    )
+
+    resources = await create_azure_producer()
+    return IngestProducer(
+        dispatchers=resources.dispatchers,
+        _close_callback=resources.close,
+    )
+
+
+async def _create_rabbitmq_producer() -> IngestProducer:
+    from shared.messaging.rabbitmq.composition import (
+        create_rabbitmq_producer,
+    )
+
+    resources = await create_rabbitmq_producer()
+    return IngestProducer(
+        dispatchers=resources.dispatchers,
+        _close_callback=resources.close,
+    )
+
+
 __all__ = [
     "IngestConsumers",
     "IngestDispatchers",
     "IngestMessaging",
+    "IngestProducer",
     "create_ingest_messaging",
+    "create_ingest_producer",
 ]

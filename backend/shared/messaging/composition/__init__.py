@@ -3,7 +3,12 @@ from .composite_consumer import (
     CompositeMessageConsumer,
     create_composite_consumers,
 )
-from .models import IngestConsumers, IngestDispatchers, IngestMessaging
+from .models import (
+    IngestConsumers,
+    IngestDispatchers,
+    IngestMessaging,
+    IngestProducer,
+)
 from .provider_registry import (
     MessagingProviderRegistry,
     UnsupportedQueueProviderError,
@@ -16,6 +21,7 @@ __all__ = [
     "IngestConsumers",
     "IngestDispatchers",
     "IngestMessaging",
+    "IngestProducer",
     "MessagingProviderRegistry",
     "MessagingResourceGroup",
     "UnsupportedQueueProviderError",
