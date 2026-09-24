@@ -110,6 +110,15 @@ class SaveIngestionJobScopeUseCase:
                     "scope_data.roots items must be objects"
                 )
 
+            locator = root.get("locator")
+            if locator is not None:
+                if not isinstance(locator, dict) or not locator:
+                    raise ValueError(
+                        "scope_data.roots locator must be a non-empty object"
+                    )
+                normalized_roots.append({"locator": dict(locator)})
+                continue
+
             site_id = self._require_non_empty_string(
                 root.get("site_id"),
                 "site_id",

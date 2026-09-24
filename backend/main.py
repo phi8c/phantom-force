@@ -34,6 +34,9 @@ from module.data_platform.data_hub.sharepoint.presentation.http.router import (
 from module.data_platform.data_hub.sharepoint.presentation.http.router import (
     router as data_hub_router,
 )
+from module.data_platform.data_hub.presentation.http.router import (
+    router as knowledge_space_data_hub_router,
+)
 
 from module.chats.chat.presentation.router import (
     router as chat_router,
@@ -80,6 +83,9 @@ app.include_router(
 )
 app.include_router(
     data_hub_router,
+)
+app.include_router(
+    knowledge_space_data_hub_router,
 )
 app.include_router(
     embedding_model_router,

@@ -39,7 +39,7 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
         if limit <= 0:
             raise ValueError("Discovery limit must be greater than 0.")
 
-        source_path = self._configuration.resolve_path(source.identifier)
+        source_path = self._source_path(source)
         pending, sdk_cursor, sdk_has_more, started = self._restore_cursor(
             cursor,
             source_path,
@@ -162,4 +162,23 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
                 f"Dropbox discovery requires provider '{cls.PROVIDER_NAME}', got '{source.provider}'."
             )
         if not isinstance(source.identifier, str):
-            raise ValueError("Dropbox source identifier must be a path string.")
+            raise ValueError("Dropbox source identifier must be a string.")
+
+    def _source_path(self, source: SourceReference) -> str:
+        roots = source.metadata.get("roots")
+        if roots is None:
+            return self._configuration.resolve_path(self._configuration.root_path)
+        if not isinstance(roots, list) or len(roots) != 1:
+            raise ValueError("Dropbox discovery requires exactly one selected root.")
+        root = roots[0]
+        if not isinstance(root, dict):
+            raise ValueError("Dropbox selected root must be an object.")
+        locator = root.get("locator", root)
+        if not isinstance(locator, dict):
+            raise ValueError("Dropbox root locator must be an object.")
+        if any(key in locator for key in ("site_id", "drive_id", "item_id")):
+            raise ValueError("SharePoint locator is not valid for Dropbox discovery.")
+        path = locator.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("Dropbox root locator requires non-empty 'path'.")
+        return self._configuration.resolve_path(path)

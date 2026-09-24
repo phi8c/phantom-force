@@ -607,15 +607,23 @@ class SharePointDiscoveryProvider(
                     "SharePoint source metadata.roots items must be objects"
                 )
 
+            locator = root.get("locator", root)
+            if not isinstance(locator, dict):
+                raise ValueError(
+                    "SharePoint source metadata root locator must be an object"
+                )
+            if "path" in locator:
+                raise ValueError("Dropbox locator is not valid for SharePoint discovery")
+
             site_id = cls._get_required_root_value(
-                root,
+                locator,
                 "site_id",
             )
             drive_id = cls._get_required_root_value(
-                root,
+                locator,
                 "drive_id",
             )
-            folder_value = root.get("folder_id")
+            folder_value = locator.get("folder_id") or locator.get("item_id")
             folder_id = (
                 str(folder_value)
                 if folder_value

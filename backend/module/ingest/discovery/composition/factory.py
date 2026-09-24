@@ -31,6 +31,9 @@ from module.ingest.orchestration.composition import (
 from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_data_hub_repository_impl import (
     KnowledgeSpaceDataHubRepositoryImpl,
 )
+from module.knowledge_space.application.services.data_hub_configuration_resolver import (
+    KnowledgeSpaceDataHubConfigurationResolver,
+)
 from module.master_data.data_hub_providers.infrastructure.persistence.repositories.data_hub_provider_repository_impl import (
     DataHubProviderRepositoryImpl,
 )
@@ -93,11 +96,11 @@ def create_discover_batch_use_case(
             ingestion_config_repository=(
                 ingestion_config_repository
             ),
-            knowledge_space_data_hub_repository=(
-                knowledge_space_data_hub_repository
-            ),
-            data_hub_provider_repository=(
-                data_hub_provider_repository
+            data_hub_configuration_resolver=(
+                KnowledgeSpaceDataHubConfigurationResolver(
+                    knowledge_space_data_hub_repository,
+                    data_hub_provider_repository,
+                )
             ),
         ),
         document_repository=document_repository,
