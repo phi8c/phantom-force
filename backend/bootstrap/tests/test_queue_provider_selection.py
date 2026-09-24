@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from bootstrap.queues import (
     create_ingest_messaging,
@@ -14,6 +15,10 @@ from shared.messaging.composition import (
     IngestMessaging,
     IngestProducer,
 )
+
+
+RABBIT_JOB = UUID("11111111-1111-1111-1111-111111111111")
+AZURE_JOB = UUID("22222222-2222-2222-2222-222222222222")
 
 
 class FakeConsumer:
@@ -132,7 +137,7 @@ class MultiProviderMessagingBootstrapTests(
 class ProducerMessagingBootstrapTests(
     unittest.IsolatedAsyncioTestCase
 ):
-    async def test_creates_dispatchers_without_worker_consumers(
+    async def test_rabbit_route_lazily_creates_only_rabbit_producer(
         self,
     ) -> None:
         close_azure = AsyncMock()
@@ -146,7 +151,7 @@ class ProducerMessagingBootstrapTests(
         with (
             patch(
                 "bootstrap.queues._create_azure_producer",
-                new=AsyncMock(return_value=azure_bundle),
+                new=AsyncMock(side_effect=RuntimeError("azure failed")),
             ) as azure_producer,
             patch(
                 "bootstrap.queues._create_rabbitmq_producer",
@@ -160,21 +165,34 @@ class ProducerMessagingBootstrapTests(
                 "bootstrap.queues._create_rabbitmq_messaging",
                 new=AsyncMock(),
             ) as rabbit_worker,
+            patch(
+                "bootstrap.queues.ScopedQueueRoutingResolver.resolve_for_job",
+                new=AsyncMock(return_value="rabbitmq"),
+            ),
         ):
             producer = await create_ingest_producer()
+            azure_producer.assert_not_awaited()
+            rabbit_producer.assert_not_awaited()
+
+            await producer.dispatchers.discovery.dispatch(
+                RABBIT_JOB,
+                25,
+            )
+            await producer.dispatchers.download.dispatch(RABBIT_JOB)
 
         self.assertIsInstance(producer, IngestProducer)
-        azure_producer.assert_awaited_once_with()
         rabbit_producer.assert_awaited_once_with()
+        azure_producer.assert_not_awaited()
         azure_worker.assert_not_awaited()
         rabbit_worker.assert_not_awaited()
+        self.assertEqual(len(rabbit_bundle.dispatchers.discovery.calls), 2)
 
         await producer.close()
 
         close_rabbit.assert_awaited_once_with()
-        close_azure.assert_awaited_once_with()
+        close_azure.assert_not_awaited()
 
-    async def test_closes_azure_when_rabbit_producer_fails(
+    async def test_azure_route_isolated_from_rabbit_failure(
         self,
     ) -> None:
         close_azure = AsyncMock()
@@ -191,11 +209,19 @@ class ProducerMessagingBootstrapTests(
             patch(
                 "bootstrap.queues._create_rabbitmq_producer",
                 new=AsyncMock(side_effect=RuntimeError("failed")),
+            ) as rabbit_producer,
+            patch(
+                "bootstrap.queues.ScopedQueueRoutingResolver.resolve_for_job",
+                new=AsyncMock(return_value="azure_service_bus"),
             ),
         ):
-            with self.assertRaisesRegex(RuntimeError, "failed"):
-                await create_ingest_producer()
+            producer = await create_ingest_producer()
+            await producer.dispatchers.discovery.dispatch(AZURE_JOB, 50)
 
+        rabbit_producer.assert_not_awaited()
+        self.assertEqual(azure_bundle.dispatchers.discovery.calls, [((AZURE_JOB, 50), {})])
+
+        await producer.close()
         close_azure.assert_awaited_once_with()
 
 if __name__ == "__main__":

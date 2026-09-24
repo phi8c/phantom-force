@@ -49,12 +49,12 @@ def provider_dispatchers(provider: str) -> IngestDispatchers:
     )
 
 
-class MessagingProviderRegistryTests(unittest.TestCase):
-    def test_normalizes_provider_codes(self) -> None:
+class MessagingProviderRegistryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_normalizes_provider_codes(self) -> None:
         rabbit = provider_dispatchers("rabbitmq")
         registry = MessagingProviderRegistry({" RabbitMQ ": rabbit})
 
-        self.assertIs(registry.get("RABBITMQ"), rabbit)
+        self.assertIs(await registry.get("RABBITMQ"), rabbit)
 
     def test_rejects_duplicate_normalized_codes(self) -> None:
         with self.assertRaisesRegex(ValueError, "Duplicate"):
@@ -65,7 +65,7 @@ class MessagingProviderRegistryTests(unittest.TestCase):
                 }
             )
 
-    def test_rejects_unsupported_provider(self) -> None:
+    async def test_rejects_unsupported_provider(self) -> None:
         registry = MessagingProviderRegistry(
             {"rabbitmq": provider_dispatchers("rabbitmq")}
         )
@@ -74,7 +74,7 @@ class MessagingProviderRegistryTests(unittest.TestCase):
             UnsupportedQueueProviderError,
             "Unsupported queue provider 'azure_service_bus'",
         ):
-            registry.get("azure_service_bus")
+            await registry.get("azure_service_bus")
 
 
 class RoutingDispatcherTests(unittest.IsolatedAsyncioTestCase):

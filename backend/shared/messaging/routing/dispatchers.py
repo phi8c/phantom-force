@@ -25,7 +25,7 @@ from module.ingest.extraction.domain.contracts.extraction_dispatcher import (
 )
 from shared.messaging.composition.models import IngestDispatchers
 from shared.messaging.composition.provider_registry import (
-    MessagingProviderRegistry,
+    DispatcherProviderRegistry,
 )
 from shared.messaging.contracts.queue_routing_resolver import (
     QueueRoutingResolver,
@@ -36,7 +36,7 @@ class _RoutingDispatcher:
     def __init__(
         self,
         resolver: QueueRoutingResolver,
-        registry: MessagingProviderRegistry,
+        registry: DispatcherProviderRegistry,
     ) -> None:
         self._resolver = resolver
         self._registry = registry
@@ -48,7 +48,7 @@ class _RoutingDispatcher:
         provider_code = await self._resolver.resolve_for_job(
             ingestion_job_id
         )
-        return self._registry.get(provider_code)
+        return await self._registry.get(provider_code)
 
 
 class RoutingDiscoveryDispatcher(
@@ -106,7 +106,7 @@ class RoutingClassificationDispatcher(
 
 def create_routing_dispatchers(
     resolver: QueueRoutingResolver,
-    registry: MessagingProviderRegistry,
+    registry: DispatcherProviderRegistry,
 ) -> IngestDispatchers:
     return IngestDispatchers(
         discovery=RoutingDiscoveryDispatcher(resolver, registry),

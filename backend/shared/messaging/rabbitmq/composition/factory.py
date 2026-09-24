@@ -78,6 +78,13 @@ async def create_rabbitmq_dispatchers(
 ) -> IngestDispatchers:
     configuration = _settings()
     publisher = await resources.transport.create_publisher()
+    return _create_dispatchers(publisher, configuration)
+
+
+def _create_dispatchers(
+    publisher: object,
+    configuration: Any,
+) -> IngestDispatchers:
     return IngestDispatchers(
         discovery=RabbitMQDiscoveryDispatcher(
             publisher,
@@ -111,32 +118,7 @@ async def create_rabbitmq_producer() -> RabbitMQProducerResources:
     transport = RabbitMQTransport(configuration.RABBITMQ_URL)
     try:
         publisher = await transport.create_publisher()
-        dispatchers = IngestDispatchers(
-            discovery=RabbitMQDiscoveryDispatcher(
-                publisher,
-                configuration.RABBITMQ_DISCOVERY_QUEUE,
-            ),
-            download=RabbitMQDownloadDispatcher(
-                publisher,
-                configuration.RABBITMQ_DOWNLOAD_QUEUE,
-            ),
-            extraction=RabbitMQExtractionDispatcher(
-                publisher,
-                configuration.RABBITMQ_EXTRACT_QUEUE,
-            ),
-            chunking=RabbitMQChunkingDispatcher(
-                publisher,
-                configuration.RABBITMQ_CHUNK_QUEUE,
-            ),
-            embedding=RabbitMQEmbeddingDispatcher(
-                publisher,
-                configuration.RABBITMQ_EMBED_QUEUE,
-            ),
-            classification=RabbitMQClassificationDispatcher(
-                publisher,
-                configuration.RABBITMQ_CLASSIFY_QUEUE,
-            ),
-        )
+        dispatchers = _create_dispatchers(publisher, configuration)
     except Exception:
         await transport.close()
         raise

@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from functools import partial
 
 from shared.messaging.composition import (
+    DispatcherProviderRegistry,
+    LazyMessagingProviderRegistry,
     MessagingProviderRegistry,
     MessagingResourceGroup,
     create_composite_consumers,
@@ -45,7 +47,7 @@ async def create_ingest_messaging() -> IngestMessaging:
             }
         )
         dispatchers = _create_provider_aware_dispatchers(
-            provider_dispatchers
+            MessagingProviderRegistry(provider_dispatchers)
         )
     except Exception:
         await resources.close()
@@ -59,38 +61,27 @@ async def create_ingest_messaging() -> IngestMessaging:
 
 
 async def create_ingest_producer() -> IngestProducer:
-    azure = await _create_azure_producer()
-    try:
-        rabbitmq = await _create_rabbitmq_producer()
-    except Exception:
-        await azure.close()
-        raise
-
-    resources = MessagingResourceGroup([azure.close, rabbitmq.close])
-    try:
-        dispatchers = _create_provider_aware_dispatchers(
-            {
-                AZURE_SERVICE_BUS: azure.dispatchers,
-                RABBITMQ: rabbitmq.dispatchers,
-            }
-        )
-    except Exception:
-        await resources.close()
-        raise
+    registry = LazyMessagingProviderRegistry(
+        {
+            AZURE_SERVICE_BUS: _create_azure_producer,
+            RABBITMQ: _create_rabbitmq_producer,
+        }
+    )
+    dispatchers = _create_provider_aware_dispatchers(registry)
 
     return IngestProducer(
         dispatchers=dispatchers,
-        _close_callback=resources.close,
+        _close_callback=registry.close,
     )
 
 
 def _create_provider_aware_dispatchers(
-    provider_dispatchers: dict[str, IngestDispatchers],
+    registry: DispatcherProviderRegistry,
 ) -> IngestDispatchers:
     resolver = ScopedQueueRoutingResolver(_queue_routing_resolver_scope)
     return create_routing_dispatchers(
         resolver,
-        MessagingProviderRegistry(provider_dispatchers),
+        registry,
     )
 
 

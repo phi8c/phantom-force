@@ -10,6 +10,8 @@ from .models import (
     IngestProducer,
 )
 from .provider_registry import (
+    DispatcherProviderRegistry,
+    LazyMessagingProviderRegistry,
     MessagingProviderRegistry,
     UnsupportedQueueProviderError,
 )
@@ -18,10 +20,12 @@ from .resource_group import MessagingResourceGroup
 __all__ = [
     "CompositeConsumerError",
     "CompositeMessageConsumer",
+    "DispatcherProviderRegistry",
     "IngestConsumers",
     "IngestDispatchers",
     "IngestMessaging",
     "IngestProducer",
+    "LazyMessagingProviderRegistry",
     "MessagingProviderRegistry",
     "MessagingResourceGroup",
     "UnsupportedQueueProviderError",
