@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import socket
 from typing import AsyncContextManager
@@ -13,6 +12,8 @@ from module.ingest.chunking.application.use_cases.chunk_document import (
     ChunkDocumentUseCase,
 )
 from module.ingest.orchestration.domain.enums import IngestionStage
+from shared.messaging.contracts import MessageConsumer
+from workers.ingest.message_settlement import nack_with_backoff
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class ChunkingWorker:
 
     def __init__(
         self,
-        queue_client,
+        consumer: MessageConsumer,
         claim_scope_factory,
         use_case_factory: Callable[
             [],
@@ -34,7 +35,7 @@ class ChunkingWorker:
         lease_seconds: int = 300,
         max_concurrency: int = 5,
     ):
-        self.queue_client = queue_client
+        self.consumer = consumer
         self.claim_scope_factory = (
             claim_scope_factory
         )
@@ -60,9 +61,9 @@ class ChunkingWorker:
         while True:
             try:
                 messages = await (
-                    self.queue_client.receive_messages(
-                        max_message_count=1,
-                        max_wait_time=5,
+                    self.consumer.receive(
+                        max_messages=1,
+                        wait_timeout=5,
                     )
                 )
 
@@ -77,9 +78,7 @@ class ChunkingWorker:
 
             for message in messages:
                 try:
-                    payload = json.loads(
-                        str(message)
-                    )
+                    payload = message.payload
                     logger.info(
                         "chunking received payload=%s",
                         payload,
@@ -161,10 +160,7 @@ class ChunkingWorker:
                     )
 
                     await (
-                        self.queue_client
-                        .complete_message(
-                            message,
-                        )
+                        message.ack()
                     )
                     logger.info(
                         "chunking completed job_id=%s",
@@ -174,6 +170,11 @@ class ChunkingWorker:
                 except Exception:
                     logger.exception(
                         "chunking failed"
+                    )
+                    await nack_with_backoff(
+                        message,
+                        logger=logger,
+                        worker_name="chunking",
                     )
                     continue
 

@@ -3,7 +3,9 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.extraction.composition import ExtractionDispatcher
+from module.ingest.extraction.domain.contracts.extraction_dispatcher import (
+    ExtractionDispatcher,
+)
 
 
 class AzureExtractionDispatcher(

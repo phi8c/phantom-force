@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
 from shared.config.settings import settings
+from shared.messaging.composition import IngestDispatchers
+from shared.messaging.azure_service_bus.consumer import AzureMessageConsumer
 from shared.messaging.azure_service_bus.dispatchers import (
     AzureChunkingDispatcher,
     AzureClassificationDispatcher,
@@ -20,16 +22,6 @@ class IngestQueueClients:
     chunking: object
     embedding: object
     classification: object
-
-
-@dataclass(frozen=True)
-class IngestDispatchers:
-    discovery: AzureDiscoveryDispatcher
-    download: AzureDownloadDispatcher
-    extraction: AzureExtractionDispatcher
-    chunking: AzureChunkingDispatcher
-    embedding: AzureEmbeddingDispatcher
-    classification: AzureClassificationDispatcher
 
 
 def create_service_bus_client():
@@ -56,23 +48,35 @@ def create_ingest_queue_clients() -> IngestQueueClients:
 
     return IngestQueueClients(
         service_bus_client=service_bus_client,
-        discovery=service_bus_client.get_queue_receiver(
-            queue_name=discovery_queue_name,
+        discovery=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=discovery_queue_name,
+            ),
         ),
-        download=service_bus_client.get_queue_receiver(
-            queue_name=settings.AZURE_SERVICE_BUS_DOWNLOAD_QUEUE,
+        download=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=settings.AZURE_SERVICE_BUS_DOWNLOAD_QUEUE,
+            ),
         ),
-        extraction=service_bus_client.get_queue_receiver(
-            queue_name=settings.AZURE_SERVICE_BUS_EXTRACT_QUEUE,
+        extraction=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=settings.AZURE_SERVICE_BUS_EXTRACT_QUEUE,
+            ),
         ),
-        chunking=service_bus_client.get_queue_receiver(
-            queue_name=settings.AZURE_SERVICE_BUS_CHUNK_QUEUE,
+        chunking=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=settings.AZURE_SERVICE_BUS_CHUNK_QUEUE,
+            ),
         ),
-        embedding=service_bus_client.get_queue_receiver(
-            queue_name=settings.AZURE_SERVICE_BUS_EMBED_QUEUE,
+        embedding=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=settings.AZURE_SERVICE_BUS_EMBED_QUEUE,
+            ),
         ),
-        classification=service_bus_client.get_queue_receiver(
-            queue_name=settings.AZURE_SERVICE_BUS_CLASSIFY_QUEUE,
+        classification=AzureMessageConsumer(
+            service_bus_client.get_queue_receiver(
+                queue_name=settings.AZURE_SERVICE_BUS_CLASSIFY_QUEUE,
+            ),
         ),
     )
 

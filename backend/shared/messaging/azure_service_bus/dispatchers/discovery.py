@@ -3,7 +3,9 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.discovery.composition import DiscoveryDispatcher
+from module.ingest.discovery.domain.contracts.discovery_dispatcher import (
+    DiscoveryDispatcher,
+)
 
 
 class AzureDiscoveryDispatcher(

@@ -3,7 +3,9 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.chunking.composition import ChunkingDispatcher
+from module.ingest.chunking.domain.contracts.chunking_dispatcher import (
+    ChunkingDispatcher,
+)
 
 
 class AzureChunkingDispatcher(

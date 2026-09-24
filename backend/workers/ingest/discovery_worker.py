@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from typing import AsyncContextManager
 from collections.abc import Callable
@@ -11,6 +10,8 @@ from module.ingest.discovery.application.dtos.requests.discover_batch_request im
 from module.ingest.discovery.application.use_cases.discover_batch import (
     DiscoverBatchUseCase,
 )
+from shared.messaging.contracts import MessageConsumer
+from workers.ingest.message_settlement import nack_with_backoff
 
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ class DiscoveryWorker:
 
     def __init__(
         self,
-        queue_client,
+        consumer: MessageConsumer,
         use_case_factory: Callable[
             [],
             AsyncContextManager[
@@ -29,7 +30,7 @@ class DiscoveryWorker:
         ],
         discovery_dispatcher,
     ):
-        self.queue_client = queue_client
+        self.consumer = consumer
         self.use_case_factory = use_case_factory
         self.discovery_dispatcher = (
             discovery_dispatcher
@@ -45,9 +46,9 @@ class DiscoveryWorker:
 
             try:
                 messages = await (
-                    self.queue_client.receive_messages(
-                        max_message_count=1,
-                        max_wait_time=5,
+                    self.consumer.receive(
+                        max_messages=1,
+                        wait_timeout=5,
                     )
                 )
 
@@ -63,9 +64,7 @@ class DiscoveryWorker:
             for message in messages:
 
                 try:
-                    payload = json.loads(
-                        str(message)
-                    )
+                    payload = message.payload
                     logger.info(
                         "discovery received payload=%s",
                         payload,
@@ -125,10 +124,7 @@ class DiscoveryWorker:
                         )
 
                     await (
-                        self.queue_client
-                        .complete_message(
-                            message,
-                        )
+                        message.ack()
                     )
                     logger.info(
                         "discovery completed job_id=%s",
@@ -138,6 +134,11 @@ class DiscoveryWorker:
                 except Exception:
                     logger.exception(
                         "discovery failed"
+                    )
+                    await nack_with_backoff(
+                        message,
+                        logger=logger,
+                        worker_name="discovery",
                     )
                     continue
 

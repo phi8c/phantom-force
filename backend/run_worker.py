@@ -5,11 +5,7 @@ from collections.abc import AsyncIterator
 from uuid import UUID
 
 from bootstrap.database import async_session_factory
-from bootstrap.queues import (
-    close_ingest_queue_clients,
-    create_ingest_dispatchers,
-    create_ingest_queue_clients,
-)
+from bootstrap.queues import create_ingest_messaging
 from bootstrap.workers import (
     create_chunking_worker,
     create_classification_worker,
@@ -322,8 +318,9 @@ async def run_worker(worker_name: str) -> None:
         "worker bootstrap name=%s",
         worker_name,
     )
-    queues = create_ingest_queue_clients()
-    dispatchers = create_ingest_dispatchers(queues)
+    messaging = await create_ingest_messaging()
+    consumers = messaging.consumers
+    dispatchers = messaging.dispatchers
 
     try:
         if worker_name == "discovery":
@@ -333,7 +330,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
             worker = create_discovery_worker(
-                queues=queues,
+                consumers=consumers,
                 dispatchers=dispatchers,
                 data_hub_provider_resolver=(
                     data_hub_provider_resolver
@@ -349,7 +346,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
             worker = create_download_worker(
-                queues=queues,
+                consumers=consumers,
                 dispatchers=dispatchers,
                 document_source=(
                     create_download_document_source(
@@ -372,7 +369,7 @@ async def run_worker(worker_name: str) -> None:
             )
 
             worker = create_extraction_worker(
-                queues=queues,
+                consumers=consumers,
                 dispatchers=dispatchers,
                 file_storage=file_storage,
                 object_storage=(
@@ -388,7 +385,7 @@ async def run_worker(worker_name: str) -> None:
             file_storage = create_file_storage()
 
             worker = create_chunking_worker(
-                queues=queues,
+                consumers=consumers,
                 dispatchers=dispatchers,
                 file_storage=file_storage,
             )
@@ -396,14 +393,14 @@ async def run_worker(worker_name: str) -> None:
         elif worker_name == "embedding":
             logger.info("worker creating name=embedding")
             worker = create_embedding_worker(
-                queues=queues,
+                consumers=consumers,
             )
 
         elif worker_name == "classification":
             logger.info("worker creating name=classification")
             file_storage = create_file_storage()
             worker = create_classification_worker(
-                queues=queues,
+                consumers=consumers,
                 file_storage=file_storage,
             )
 
@@ -430,9 +427,7 @@ async def run_worker(worker_name: str) -> None:
             "worker closing name=%s",
             worker_name,
         )
-        await close_ingest_queue_clients(
-            queues,
-        )
+        await messaging.close()
 
 
 def main() -> None:

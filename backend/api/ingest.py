@@ -17,11 +17,7 @@ from bootstrap.modules import (
     start_existing_ingestion_job_use_case_scope,
     start_ingestion_use_case_scope,
 )
-from bootstrap.queues import (
-    close_ingest_queue_clients,
-    create_ingest_dispatchers,
-    create_ingest_queue_clients,
-)
+from bootstrap.queues import create_ingest_messaging
 from module.ingest.config.application.dtos.start_ingestion import (
     StartIngestionCommand,
 )
@@ -321,12 +317,10 @@ async def save_ingestion_job_scope(
 async def create_and_start_ingestion(
     request: CreateIngestionRequest,
 ):
-    queues = create_ingest_queue_clients()
+    messaging = await create_ingest_messaging()
 
     try:
-        dispatchers = create_ingest_dispatchers(
-            queues,
-        )
+        dispatchers = messaging.dispatchers
 
         async with start_ingestion_use_case_scope(
             discovery_dispatcher=(
@@ -376,9 +370,7 @@ async def create_and_start_ingestion(
         ) from exc
 
     finally:
-        await close_ingest_queue_clients(
-            queues,
-        )
+        await messaging.close()
 
     return {
         "ingestion_job_id": str(
@@ -395,12 +387,10 @@ async def start_existing_ingestion(
     ingestion_job_id: UUID,
     request: StartIngestionRequest,
 ):
-    queues = create_ingest_queue_clients()
+    messaging = await create_ingest_messaging()
 
     try:
-        dispatchers = create_ingest_dispatchers(
-            queues,
-        )
+        dispatchers = messaging.dispatchers
 
         async with (
             start_existing_ingestion_job_use_case_scope(
@@ -435,9 +425,7 @@ async def start_existing_ingestion(
         ) from exc
 
     finally:
-        await close_ingest_queue_clients(
-            queues,
-        )
+        await messaging.close()
 
     return {
         "ingestion_job_id": str(

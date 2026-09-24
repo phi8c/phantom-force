@@ -3,7 +3,9 @@ from uuid import UUID
 
 from azure.servicebus import ServiceBusMessage
 
-from module.ingest.classification.composition import ClassificationDispatcher
+from module.ingest.classification.domain.contracts.classification_dispatcher import (
+    ClassificationDispatcher,
+)
 
 
 class AzureClassificationDispatcher(

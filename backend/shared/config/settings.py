@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     APP_NAME: str
+    QUEUE_PROVIDER: str = "azure_service_bus"
 
     DATABASE_URL: str
 
@@ -65,6 +66,17 @@ class Settings(BaseSettings):
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str
     AZURE_ENPOINT_NAME: str
     
+    
+    
+    
+    RABBITMQ_URL: str
+    RABBITMQ_DISCOVERY_QUEUE: str
+    RABBITMQ_DOWNLOAD_QUEUE: str
+    RABBITMQ_EXTRACT_QUEUE: str
+    RABBITMQ_CHUNK_QUEUE: str
+    RABBITMQ_EMBED_QUEUE: str
+    RABBITMQ_CLASSIFY_QUEUE: str
+        
     
     
     class Config:

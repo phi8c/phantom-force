@@ -51,7 +51,7 @@ from bootstrap.modules import discovery_use_case_scope
 from bootstrap.modules import download_use_case_scope
 from bootstrap.modules import embedding_use_case_scope
 from bootstrap.modules import extraction_use_case_scope
-from bootstrap.queues import IngestQueueClients
+from bootstrap.queues import IngestConsumers
 from bootstrap.queues import IngestDispatchers
 
 
@@ -157,13 +157,13 @@ async def _classification_claim_scope() -> AsyncIterator[tuple]:
 
 def create_discovery_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
     dispatchers: IngestDispatchers,
     data_hub_provider_resolver,
 ) -> DiscoveryWorker:
 
     return DiscoveryWorker(
-        queue_client=queues.discovery,
+        consumer=consumers.discovery,
         use_case_factory=lambda: discovery_use_case_scope(
             data_hub_provider_resolver=(
                 data_hub_provider_resolver
@@ -176,14 +176,14 @@ def create_discovery_worker(
 
 def create_download_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
     dispatchers: IngestDispatchers,
     document_source,
     object_storage,
 ) -> DownloadWorker:
 
     return DownloadWorker(
-        queue_client=queues.download,
+        consumer=consumers.download,
         claim_scope_factory=_download_claim_scope,
         use_case_factory=lambda: download_use_case_scope(
             document_source=document_source,
@@ -200,14 +200,14 @@ def create_download_worker(
 
 def create_extraction_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
     dispatchers: IngestDispatchers,
     file_storage,
     object_storage,
 ) -> ExtractionWorker:
 
     return ExtractionWorker(
-        queue_client=queues.extraction,
+        consumer=consumers.extraction,
         claim_scope_factory=_extraction_claim_scope,
         use_case_factory=lambda: extraction_use_case_scope(
             file_storage=file_storage,
@@ -219,13 +219,13 @@ def create_extraction_worker(
 
 def create_chunking_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
     dispatchers: IngestDispatchers,
     file_storage,
 ) -> ChunkingWorker:
 
     return ChunkingWorker(
-        queue_client=queues.chunking,
+        consumer=consumers.chunking,
         claim_scope_factory=_chunking_claim_scope,
         use_case_factory=lambda: chunking_use_case_scope(
             file_storage=file_storage,
@@ -241,11 +241,11 @@ def create_chunking_worker(
 
 def create_embedding_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
 ) -> EmbeddingWorker:
 
     return EmbeddingWorker(
-        queue_client=queues.embedding,
+        consumer=consumers.embedding,
         claim_scope_factory=_embedding_claim_scope,
         use_case_factory=embedding_use_case_scope,
     )
@@ -253,12 +253,12 @@ def create_embedding_worker(
 
 def create_classification_worker(
     *,
-    queues: IngestQueueClients,
+    consumers: IngestConsumers,
     file_storage,
 ) -> ClassificationWorker:
 
     return ClassificationWorker(
-        queue_client=queues.classification,
+        consumer=consumers.classification,
         claim_scope_factory=_classification_claim_scope,
         use_case_factory=lambda: classification_use_case_scope(
             file_storage=file_storage,

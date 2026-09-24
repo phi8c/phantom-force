@@ -1,11 +1,7 @@
 import asyncio
 import logging
 
-from bootstrap.queues import (
-    close_ingest_queue_clients,
-    create_ingest_dispatchers,
-    create_ingest_queue_clients,
-)
+from bootstrap.queues import create_ingest_messaging
 from bootstrap.workers import (
     create_chunking_worker,
     create_classification_worker,
@@ -35,8 +31,9 @@ async def run() -> None:
     logger.info("local ingest bootstrap starting")
 
     # Một bộ queue client dùng chung cho toàn process.
-    queues = create_ingest_queue_clients()
-    dispatchers = create_ingest_dispatchers(queues)
+    messaging = await create_ingest_messaging()
+    consumers = messaging.consumers
+    dispatchers = messaging.dispatchers
 
     # Các dependency có thể share giữa nhiều worker.
     file_storage = create_file_storage()
@@ -49,14 +46,14 @@ async def run() -> None:
 
     workers = [
         create_discovery_worker(
-            queues=queues,
+            consumers=consumers,
             dispatchers=dispatchers,
             data_hub_provider_resolver=(
                 data_hub_provider_resolver
             ),
         ),
         create_download_worker(
-            queues=queues,
+            consumers=consumers,
             dispatchers=dispatchers,
             document_source=(
                 create_download_document_source(
@@ -71,7 +68,7 @@ async def run() -> None:
             ),
         ),
         create_extraction_worker(
-            queues=queues,
+            consumers=consumers,
             dispatchers=dispatchers,
             file_storage=file_storage,
             object_storage=(
@@ -82,15 +79,15 @@ async def run() -> None:
             ),
         ),
         create_chunking_worker(
-            queues=queues,
+            consumers=consumers,
             dispatchers=dispatchers,
             file_storage=file_storage,
         ),
         create_embedding_worker(
-            queues=queues,
+            consumers=consumers,
         ),
         create_classification_worker(
-            queues=queues,
+            consumers=consumers,
             file_storage=file_storage,
         ),
     ]
@@ -110,9 +107,7 @@ async def run() -> None:
             "local ingest shutting down"
         )
 
-        await close_ingest_queue_clients(
-            queues,
-        )
+        await messaging.close()
 
 
 def main() -> None:
