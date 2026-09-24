@@ -25,13 +25,13 @@ from module.ingest.master.presentation.router import (
 from module.data_platform.common.microsoft_graph.authentication.factory import (
     create_graph_token_provider,
 )
-from module.data_platform.data_hub.presentation.http.dependencies import (
+from module.data_platform.data_hub.sharepoint.presentation.http.dependencies import (
     build_data_hub_service,
 )
-from module.data_platform.data_hub.presentation.http.router import (
+from module.data_platform.data_hub.sharepoint.presentation.http.router import (
     get_data_hub_service,
 )
-from module.data_platform.data_hub.presentation.http.router import (
+from module.data_platform.data_hub.sharepoint.presentation.http.router import (
     router as data_hub_router,
 )
 

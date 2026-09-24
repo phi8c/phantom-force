@@ -124,7 +124,7 @@ def create_graph_token_provider() -> TokenProvider:
 
 
 def create_data_hub_provider_resolver():
-    from module.data_platform.data_hub.composition.provider_resolver import (
+    from module.data_platform.data_hub.sharepoint.composition import (
         DataHubProviderResolver,
     )
 
@@ -201,13 +201,13 @@ def create_download_stream_factory(
             from module.data_platform.common.microsoft_graph.client import (
                 MicrosoftGraphClient,
             )
-            from module.data_platform.data_hub.infrastructure.providers.sharepoint.downloader import (
+            from module.data_platform.data_hub.sharepoint.infrastructure.downloader import (
                 SharePointFileDownloader,
             )
-            from module.data_platform.data_hub.domain.entities.discovered_file import (
+            from module.data_platform.data_hub.shared.domain.entities.discovered_file import (
                 DiscoveredFile,
             )
-            from module.data_platform.data_hub.domain.value_objects.source_reference import (
+            from module.data_platform.data_hub.shared.domain.value_objects.source_reference import (
                 SourceReference,
             )
 

@@ -1,7 +1,7 @@
-from module.data_platform.data_hub.composition.provider_resolver import (
+from module.data_platform.data_hub.sharepoint.composition import (
     DataHubProviderResolver,
 )
-from module.data_platform.data_hub.domain.value_objects.source_reference import (
+from module.data_platform.data_hub.shared.domain.value_objects.source_reference import (
     SourceReference as DataHubSourceReference,
 )
 from module.ingest.discovery.domain.contracts.discovery_provider import (

@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from module.data_platform.data_hub.composition.provider_resolver import (
+from module.data_platform.data_hub.sharepoint.composition import (
     DataHubProviderResolver,
 )
 from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (

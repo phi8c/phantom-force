@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from module.data_platform.data_hub.application.services.data_hub_service import (
+from module.data_platform.data_hub.sharepoint.application.services.data_hub_service import (
     DataHubService,
 )
-from module.data_platform.data_hub.domain.entities.discovered_file import (
+from module.data_platform.data_hub.shared.domain.entities.discovered_file import (
     DiscoveredFile,
 )
-from module.data_platform.data_hub.domain.value_objects.source_reference import (
+from module.data_platform.data_hub.shared.domain.value_objects.source_reference import (
     SourceReference,
 )
 from collections.abc import AsyncIterator
