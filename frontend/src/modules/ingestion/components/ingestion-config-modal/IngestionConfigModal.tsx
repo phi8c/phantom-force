@@ -19,6 +19,7 @@ import { SourceScopeStep } from "./source-scope-step";
 interface IngestionConfigModalProps {
   open: boolean;
   ingestionJobId: string | null;
+  knowledgeSpaceId?: string;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }
@@ -31,6 +32,7 @@ const steps = [
 export function IngestionConfigModal({
   open,
   ingestionJobId,
+  knowledgeSpaceId,
   onOpenChange,
   onSaved,
 }: IngestionConfigModalProps) {
@@ -77,12 +79,13 @@ export function IngestionConfigModal({
       return !extractionEngineCode || !chunkingStrategyCode;
     }
 
-    return selectedRoots.length === 0;
+    return !knowledgeSpaceId || selectedRoots.length === 0;
   }, [
     chunkingStrategyCode,
     currentStep,
     extractionEngineCode,
     ingestionJobId,
+    knowledgeSpaceId,
     loading,
     saving,
     selectedRoots.length,
@@ -179,7 +182,7 @@ export function IngestionConfigModal({
   }
 
   async function handleSaveScope() {
-    if (!ingestionJobId) {
+    if (!ingestionJobId || !knowledgeSpaceId) {
       return;
     }
 
@@ -242,6 +245,7 @@ export function IngestionConfigModal({
         />
       ) : (
         <SourceScopeStep
+          knowledgeSpaceId={knowledgeSpaceId}
           selectedRoots={selectedRoots}
           onSelectedRootsChange={setSelectedRoots}
         />

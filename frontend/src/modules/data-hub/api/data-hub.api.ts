@@ -1,6 +1,31 @@
 import { apiClient } from "@/lib/api/client";
 
-import type { DataHubBrowseNode } from "../types";
+import type {
+  DataHubBrowseNode,
+  DataHubBrowseResponse,
+} from "../types";
+
+export async function browseDataHubRoot(
+  knowledgeSpaceId: string,
+) {
+  const response = await apiClient.get<DataHubBrowseResponse>(
+    `/data-hub/knowledge-spaces/${encodeURIComponent(knowledgeSpaceId)}/browse`,
+  );
+
+  return response.data;
+}
+
+export async function browseDataHubChildren(
+  knowledgeSpaceId: string,
+  locator: Record<string, unknown>,
+) {
+  const response = await apiClient.post<DataHubBrowseResponse>(
+    `/data-hub/knowledge-spaces/${encodeURIComponent(knowledgeSpaceId)}/browse`,
+    { locator },
+  );
+
+  return response.data;
+}
 
 export async function listSharePointSites() {
   const response =

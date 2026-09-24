@@ -82,11 +82,19 @@ export interface IngestionConfigurationEnvelope {
   } | null;
 }
 
-export interface IngestionScopeRoot {
+export interface GenericIngestionScopeRoot {
+  locator: Record<string, unknown>;
+}
+
+export interface LegacySharePointScopeRoot {
   site_id: string;
   drive_id: string;
   folder_id: string | null;
 }
+
+export type IngestionScopeRoot =
+  | GenericIngestionScopeRoot
+  | LegacySharePointScopeRoot;
 
 export interface IngestionScopeRequest {
   scope_type: "SELECTED_ROOTS";

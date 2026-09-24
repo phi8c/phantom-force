@@ -131,6 +131,7 @@ export function IngestionPage({
       <IngestionConfigModal
         open={configOpen}
         ingestionJobId={configureJobId}
+        knowledgeSpaceId={knowledgeSpaceId}
         onOpenChange={(nextOpen) => {
           setConfigOpen(nextOpen);
           if (!nextOpen) {

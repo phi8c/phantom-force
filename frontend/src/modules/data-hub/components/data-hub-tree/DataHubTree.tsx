@@ -13,16 +13,15 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
-  listSharePointDriveChildren,
-  listSharePointDrives,
-  listSharePointFolderChildren,
-  listSharePointSites,
+  browseDataHubChildren,
+  browseDataHubRoot,
 } from "../../api";
 import type { DataHubBrowseNode } from "../../types";
 import type { IngestionScopeRoot } from "@/modules/ingestion";
 import { cn } from "@/lib/utils";
 
 interface DataHubTreeProps {
+  knowledgeSpaceId: string;
   selectedRoots: IngestionScopeRoot[];
   onSelectedRootsChange: (
     roots: IngestionScopeRoot[],
@@ -30,10 +29,27 @@ interface DataHubTreeProps {
 }
 
 export function DataHubTree({
+  knowledgeSpaceId,
   selectedRoots,
   onSelectedRootsChange,
 }: DataHubTreeProps) {
-  const [sites, setSites] = useState<DataHubBrowseNode[]>([]);
+  return (
+    <DataHubTreeContent
+      key={knowledgeSpaceId}
+      knowledgeSpaceId={knowledgeSpaceId}
+      selectedRoots={selectedRoots}
+      onSelectedRootsChange={onSelectedRootsChange}
+    />
+  );
+}
+
+function DataHubTreeContent({
+  knowledgeSpaceId,
+  selectedRoots,
+  onSelectedRootsChange,
+}: DataHubTreeProps) {
+  const [rootNodes, setRootNodes] = useState<DataHubBrowseNode[]>([]);
+  const [provider, setProvider] = useState<string | null>(null);
   const [childrenByKey, setChildrenByKey] = useState<
     Record<string, DataHubBrowseNode[]>
   >({});
@@ -46,21 +62,25 @@ export function DataHubTree({
   const [error, setError] = useState<string | null>(null);
 
   const selectedKeys = useMemo(
-    () => new Set(selectedRoots.map(rootKey)),
+    () =>
+      new Set(
+        selectedRoots
+          .filter(isGenericRoot)
+          .map(rootKey),
+      ),
     [selectedRoots],
   );
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadSites() {
+    async function loadRoot() {
       try {
-        setError(null);
-        setLoadingKeys(new Set(["root"]));
-        const data = await listSharePointSites();
+        const data = await browseDataHubRoot(knowledgeSpaceId);
 
         if (mounted) {
-          setSites(data);
+          setRootNodes(data.nodes);
+          setProvider(data.provider);
         }
       } catch (caughtError) {
         if (mounted) {
@@ -73,12 +93,12 @@ export function DataHubTree({
       }
     }
 
-    void loadSites();
+    void loadRoot();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [knowledgeSpaceId]);
 
   async function toggleExpand(node: DataHubBrowseNode) {
     const key = nodeKey(node);
@@ -100,10 +120,13 @@ export function DataHubTree({
     setLoadingKeys((current) => new Set(current).add(key));
 
     try {
-      const children = await loadChildren(node);
+      const response = await browseDataHubChildren(
+        knowledgeSpaceId,
+        node.locator,
+      );
       setChildrenByKey((current) => ({
         ...current,
-        [key]: children,
+        [key]: response.nodes,
       }));
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
@@ -127,18 +150,23 @@ export function DataHubTree({
 
     if (selectedKeys.has(key)) {
       onSelectedRootsChange(
-        selectedRoots.filter(
+        selectedRoots.filter(isGenericRoot).filter(
           (selectedRoot) => rootKey(selectedRoot) !== key,
         ),
       );
       return;
     }
 
-    const withoutChildren = selectedRoots.filter(
-      (selectedRoot) =>
-        !isCoveredBy(root, selectedRoot) &&
-        !isCoveredBy(selectedRoot, root),
+    const descendantKeys = collectDescendantRootKeys(
+      node,
+      childrenByKey,
     );
+    const withoutChildren = selectedRoots
+      .filter(isGenericRoot)
+      .filter(
+        (selectedRoot) =>
+          !descendantKeys.has(rootKey(selectedRoot)),
+      );
 
     onSelectedRootsChange([...withoutChildren, root]);
   }
@@ -146,7 +174,9 @@ export function DataHubTree({
   return (
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <div className="text-sm font-medium">SharePoint</div>
+        <div className="text-sm font-medium">
+          {provider ? formatProvider(provider) : "Data Hub"}
+        </div>
         {loadingKeys.has("root") && (
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         )}
@@ -159,16 +189,16 @@ export function DataHubTree({
           </p>
         )}
 
-        {!error && sites.length === 0 && !loadingKeys.has("root") && (
+        {!error && rootNodes.length === 0 && !loadingKeys.has("root") && (
           <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-            No SharePoint sites found.
+            No Data Hub items found.
           </p>
         )}
 
-        {sites.map((site) => (
+        {rootNodes.map((node) => (
           <TreeNode
-            key={nodeKey(site)}
-            node={site}
+            key={nodeKey(node)}
+            node={node}
             depth={0}
             expandedKeys={expandedKeys}
             loadingKeys={loadingKeys}
@@ -230,7 +260,7 @@ function TreeNode({
           variant="ghost"
           size="icon"
           className="size-6"
-          disabled={!node.has_children && node.type !== "site"}
+          disabled={!node.has_children}
           onClick={() => void onExpand(node)}
         >
           {loading ? (
@@ -298,85 +328,80 @@ function NodeIcon({
   return <FileText className="size-4 text-muted-foreground" />;
 }
 
-async function loadChildren(node: DataHubBrowseNode) {
-  if (node.type === "site" && node.site_id) {
-    return listSharePointDrives(node.site_id);
-  }
-
-  if (
-    node.type === "drive" &&
-    node.site_id &&
-    node.drive_id
-  ) {
-    return listSharePointDriveChildren(
-      node.site_id,
-      node.drive_id,
-    );
-  }
-
-  if (
-    node.type === "folder" &&
-    node.site_id &&
-    node.drive_id
-  ) {
-    return listSharePointFolderChildren(
-      node.site_id,
-      node.drive_id,
-      node.id,
-    );
-  }
-
-  return [];
-}
-
 function toScopeRoot(
   node: DataHubBrowseNode,
 ): IngestionScopeRoot | null {
-  if (!node.site_id || !node.drive_id) {
-    return null;
-  }
-
-  if (node.type === "drive") {
-    return {
-      site_id: node.site_id,
-      drive_id: node.drive_id,
-      folder_id: null,
-    };
-  }
-
-  if (node.type === "folder") {
-    return {
-      site_id: node.site_id,
-      drive_id: node.drive_id,
-      folder_id: node.id,
-    };
+  if (node.type === "drive" || node.type === "folder") {
+    return { locator: { ...node.locator } };
   }
 
   return null;
 }
 
-function isCoveredBy(
-  parent: IngestionScopeRoot,
-  child: IngestionScopeRoot,
-) {
-  return (
-    parent.site_id === child.site_id &&
-    parent.drive_id === child.drive_id &&
-    parent.folder_id === null &&
-    child.folder_id !== null
-  );
-}
-
 function nodeKey(node: DataHubBrowseNode) {
-  return `${node.type}:${node.site_id ?? ""}:${node.drive_id ?? ""}:${node.id}`;
+  return `${node.provider}:${node.type}:${node.id}`;
 }
 
 function rootKey(root: IngestionScopeRoot) {
-  return `${root.site_id}:${root.drive_id}:${root.folder_id ?? "root"}`;
+  if (!isGenericRoot(root)) {
+    return "legacy";
+  }
+
+  return stableSerialize(root.locator);
+}
+
+function isGenericRoot(
+  root: IngestionScopeRoot,
+): root is Extract<IngestionScopeRoot, { locator: Record<string, unknown> }> {
+  return "locator" in root;
+}
+
+function collectDescendantRootKeys(
+  node: DataHubBrowseNode,
+  childrenByKey: Record<string, DataHubBrowseNode[]>,
+) {
+  const keys = new Set<string>();
+  const pending = [...(childrenByKey[nodeKey(node)] ?? [])];
+
+  while (pending.length > 0) {
+    const child = pending.pop();
+    if (!child) {
+      continue;
+    }
+    const root = toScopeRoot(child);
+    if (root) {
+      keys.add(rootKey(root));
+    }
+    pending.push(...(childrenByKey[nodeKey(child)] ?? []));
+  }
+
+  return keys;
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function formatProvider(provider: string) {
+  return provider
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
-    : "Unable to load SharePoint.";
+    : "Unable to load Data Hub.";
 }
