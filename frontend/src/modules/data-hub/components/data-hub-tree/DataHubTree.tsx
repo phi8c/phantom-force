@@ -19,6 +19,14 @@ import {
 import type { DataHubBrowseNode } from "../../types";
 import type { IngestionScopeRoot } from "@/modules/ingestion";
 import { cn } from "@/lib/utils";
+import {
+  deselectGenericRoot,
+  genericRootKey,
+  isGenericRoot,
+  selectGenericRoot,
+  selectedGenericKeys,
+} from "./selection";
+import type { GenericScopeRoot } from "./selection";
 
 interface DataHubTreeProps {
   knowledgeSpaceId: string;
@@ -62,12 +70,7 @@ function DataHubTreeContent({
   const [error, setError] = useState<string | null>(null);
 
   const selectedKeys = useMemo(
-    () =>
-      new Set(
-        selectedRoots
-          .filter(isGenericRoot)
-          .map(rootKey),
-      ),
+    () => selectedGenericKeys(selectedRoots),
     [selectedRoots],
   );
 
@@ -84,6 +87,8 @@ function DataHubTreeContent({
         }
       } catch (caughtError) {
         if (mounted) {
+          setRootNodes([]);
+          setProvider(null);
           setError(toErrorMessage(caughtError));
         }
       } finally {
@@ -149,11 +154,7 @@ function DataHubTreeContent({
     const key = rootKey(root);
 
     if (selectedKeys.has(key)) {
-      onSelectedRootsChange(
-        selectedRoots.filter(isGenericRoot).filter(
-          (selectedRoot) => rootKey(selectedRoot) !== key,
-        ),
-      );
+      onSelectedRootsChange(deselectGenericRoot(selectedRoots, root));
       return;
     }
 
@@ -161,14 +162,9 @@ function DataHubTreeContent({
       node,
       childrenByKey,
     );
-    const withoutChildren = selectedRoots
-      .filter(isGenericRoot)
-      .filter(
-        (selectedRoot) =>
-          !descendantKeys.has(rootKey(selectedRoot)),
-      );
-
-    onSelectedRootsChange([...withoutChildren, root]);
+    onSelectedRootsChange(
+      selectGenericRoot(selectedRoots, root, descendantKeys),
+    );
   }
 
   return (
@@ -330,7 +326,7 @@ function NodeIcon({
 
 function toScopeRoot(
   node: DataHubBrowseNode,
-): IngestionScopeRoot | null {
+): GenericScopeRoot | null {
   if (node.type === "drive" || node.type === "folder") {
     return { locator: { ...node.locator } };
   }
@@ -347,13 +343,7 @@ function rootKey(root: IngestionScopeRoot) {
     return "legacy";
   }
 
-  return stableSerialize(root.locator);
-}
-
-function isGenericRoot(
-  root: IngestionScopeRoot,
-): root is Extract<IngestionScopeRoot, { locator: Record<string, unknown> }> {
-  return "locator" in root;
+  return genericRootKey(root);
 }
 
 function collectDescendantRootKeys(
@@ -376,20 +366,6 @@ function collectDescendantRootKeys(
   }
 
   return keys;
-}
-
-function stableSerialize(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableSerialize).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "undefined";
 }
 
 function formatProvider(provider: string) {
