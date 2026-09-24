@@ -37,3 +37,13 @@ class DiscoveryPageResponse(BaseModel):
     items: list[DiscoveredFileResponse]
     next_cursor: dict[str, Any] | None
     has_more: bool
+
+
+class DownloadRequest(BaseModel):
+    source_identifier: str
+    external_file_id: str
+    file_name: str
+    file_extension: str | None = None
+    file_size_bytes: int | None = None
+    provider_metadata: dict[str, Any]
+    original_file_path: str | None = None

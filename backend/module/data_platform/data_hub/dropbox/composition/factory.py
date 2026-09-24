@@ -5,7 +5,7 @@ from typing import Any, Mapping
 from ..domain.configuration import DropboxConfiguration
 from ..domain.contracts.client import DropboxClient
 from ..infrastructure.browser import DropboxBrowseProvider
-from ..infrastructure.client import DropboxSdkClient
+from ..infrastructure.client import DropboxHttpClient
 from ..infrastructure.discovery import DropboxDiscoveryProvider
 from ..infrastructure.downloader import DropboxFileDownloader
 from ..provider import DropboxProvider
@@ -21,7 +21,7 @@ def create_dropbox_provider(
         if isinstance(configuration, DropboxConfiguration)
         else DropboxConfiguration.from_mapping(configuration)
     )
-    resolved_client = client or DropboxSdkClient(resolved_configuration)
+    resolved_client = client or DropboxHttpClient(resolved_configuration)
     return DropboxProvider(
         browser=DropboxBrowseProvider(resolved_client, resolved_configuration),
         discovery=DropboxDiscoveryProvider(resolved_client, resolved_configuration),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Query, Response
 
 from module.data_platform.data_hub.shared.domain.entities.discovered_file import (
     DiscoveredFile,
@@ -12,6 +14,7 @@ from module.data_platform.data_hub.shared.domain.value_objects.source_reference 
 from ...domain.entities.browse_node import DropboxBrowseNode
 from ...provider import DropboxProvider
 from .schemas import BrowseNodeResponse, DiscoverRequest, DiscoveredFileResponse
+from .schemas import DownloadRequest
 from .schemas import DiscoveryPageResponse
 
 
@@ -59,6 +62,37 @@ async def discover(
         items=[_file_response(file) for file in page.items],
         next_cursor=page.next_cursor,
         has_more=page.has_more,
+    )
+
+
+@router.post("/download", response_class=Response)
+async def download(
+    request: DownloadRequest,
+    provider: DropboxProvider = Depends(get_dropbox_provider),
+) -> Response:
+    file = DiscoveredFile(
+        external_file_id=request.external_file_id,
+        file_name=request.file_name,
+        file_extension=request.file_extension,
+        file_size_bytes=request.file_size_bytes,
+        source_file_url=None,
+        source=SourceReference(
+            provider="dropbox",
+            identifier=request.source_identifier,
+        ),
+        provider_metadata=request.provider_metadata,
+        last_modified_at=None,
+        original_file_path=request.original_file_path,
+    )
+    content = await provider.downloader.download(file)
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(request.file_name, safe='')}"
+            ),
+        },
     )
 
 
