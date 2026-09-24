@@ -103,6 +103,7 @@ class SaveIngestionJobScopeUseCase:
         normalized_roots = []
         seen_roots = set()
         selected_drive_roots = set()
+        root_format: str | None = None
 
         for root in roots:
             if not isinstance(root, dict):
@@ -110,8 +111,17 @@ class SaveIngestionJobScopeUseCase:
                     "scope_data.roots items must be objects"
                 )
 
-            locator = root.get("locator")
-            if locator is not None:
+            is_generic = "locator" in root
+            current_format = "generic" if is_generic else "legacy"
+            if root_format is None:
+                root_format = current_format
+            elif root_format != current_format:
+                raise ValueError(
+                    "scope_data.roots cannot mix generic locator and legacy SharePoint roots"
+                )
+
+            if is_generic:
+                locator = root.get("locator")
                 if not isinstance(locator, dict) or not locator:
                     raise ValueError(
                         "scope_data.roots locator must be a non-empty object"

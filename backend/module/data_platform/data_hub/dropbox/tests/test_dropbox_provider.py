@@ -145,6 +145,105 @@ class DropboxProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(page.items[0].source, source)
         self.assertEqual(self.client.list_calls, [("/RT_Test", True)])
 
+    async def test_discovery_supports_one_selected_root(self) -> None:
+        self.client.list_pages[("/RT_Test/A", True)] = DropboxListPage(
+            entries=[file_entry("a.txt", "/RT_Test/A/a.txt")]
+        )
+        source = SourceReference(
+            provider="dropbox",
+            identifier="data-hub-id",
+            metadata={"roots": [{"locator": {"path": "/RT_Test/A"}}]},
+        )
+
+        page = await self.provider.discovery.discover(source)
+
+        self.assertEqual([item.file_name for item in page.items], ["a.txt"])
+        self.assertEqual(self.client.list_calls, [("/RT_Test/A", True)])
+
+    async def test_discovery_supports_multiple_selected_roots(self) -> None:
+        self.client.list_pages[("/RT_Test/A", True)] = DropboxListPage(
+            entries=[file_entry("a.txt", "/RT_Test/A/a.txt")]
+        )
+        self.client.list_pages[("/RT_Test/B", True)] = DropboxListPage(
+            entries=[file_entry("b.txt", "/RT_Test/B/b.txt")]
+        )
+        source = self._multi_root_source()
+
+        page = await self.provider.discovery.discover(source)
+
+        self.assertEqual(
+            [item.file_name for item in page.items],
+            ["a.txt", "b.txt"],
+        )
+        self.assertFalse(page.has_more)
+
+    async def test_pagination_resumes_when_moving_to_next_root(self) -> None:
+        self.client.list_pages[("/RT_Test/A", True)] = DropboxListPage(
+            entries=[file_entry("a.txt", "/RT_Test/A/a.txt")]
+        )
+        self.client.list_pages[("/RT_Test/B", True)] = DropboxListPage(
+            entries=[file_entry("b.txt", "/RT_Test/B/b.txt")]
+        )
+        source = self._multi_root_source()
+
+        first = await self.provider.discovery.discover(source, limit=1)
+        second = await self.provider.discovery.discover(
+            source,
+            cursor=first.next_cursor,
+            limit=1,
+        )
+
+        self.assertEqual([item.file_name for item in first.items], ["a.txt"])
+        self.assertEqual([item.file_name for item in second.items], ["b.txt"])
+        self.assertTrue(first.has_more)
+        self.assertFalse(second.has_more)
+        self.assertEqual(
+            self.client.list_calls,
+            [("/RT_Test/A", True), ("/RT_Test/B", True)],
+        )
+
+    async def test_multi_root_batch_limit_applies_across_roots(self) -> None:
+        self.client.list_pages[("/RT_Test/A", True)] = DropboxListPage(
+            entries=[
+                file_entry("a1.txt", "/RT_Test/A/a1.txt"),
+                file_entry("a2.txt", "/RT_Test/A/a2.txt"),
+            ]
+        )
+        self.client.list_pages[("/RT_Test/B", True)] = DropboxListPage(
+            entries=[file_entry("b.txt", "/RT_Test/B/b.txt")]
+        )
+        source = self._multi_root_source()
+
+        first = await self.provider.discovery.discover(source, limit=2)
+        second = await self.provider.discovery.discover(
+            source, cursor=first.next_cursor, limit=2
+        )
+
+        self.assertEqual(len(first.items), 2)
+        self.assertEqual([item.file_name for item in second.items], ["b.txt"])
+
+    async def test_discovery_rejects_invalid_dropbox_locator(self) -> None:
+        source = SourceReference(
+            provider="dropbox",
+            identifier="data-hub-id",
+            metadata={"roots": [{"locator": {}}]},
+        )
+        with self.assertRaisesRegex(ValueError, "path"):
+            await self.provider.discovery.discover(source)
+
+    async def test_discovery_rejects_sharepoint_locator(self) -> None:
+        source = SourceReference(
+            provider="dropbox",
+            identifier="data-hub-id",
+            metadata={
+                "roots": [
+                    {"locator": {"site_id": "site", "drive_id": "drive"}}
+                ]
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "SharePoint locator"):
+            await self.provider.discovery.discover(source)
+
     async def test_pagination_resumes_without_restart_duplicate_or_loss(self) -> None:
         self.client.list_pages[("/RT_Test", True)] = DropboxListPage(
             entries=[
@@ -196,6 +295,19 @@ class DropboxProviderTests(unittest.IsolatedAsyncioTestCase):
         source = SourceReference(provider="sharepoint", identifier="/RT_Test")
         with self.assertRaises(ValueError):
             await self.provider.discovery.discover(source)
+
+    @staticmethod
+    def _multi_root_source() -> SourceReference:
+        return SourceReference(
+            provider="dropbox",
+            identifier="data-hub-id",
+            metadata={
+                "roots": [
+                    {"locator": {"path": "/RT_Test/A"}},
+                    {"locator": {"path": "/RT_Test/B"}},
+                ]
+            },
+        )
 
 
 if __name__ == "__main__":
