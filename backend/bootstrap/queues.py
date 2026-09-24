@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import partial
 
 from shared.messaging.composition import (
+    MessagingProviderRegistry,
+    MessagingResourceGroup,
+    create_composite_consumers,
     IngestConsumers,
     IngestDispatchers,
     IngestMessaging,
+)
+from shared.messaging.contracts import QueueRoutingResolver
+from shared.messaging.routing import (
+    ScopedQueueRoutingResolver,
+    create_routing_dispatchers,
 )
 
 
@@ -13,26 +23,72 @@ AZURE_SERVICE_BUS = "azure_service_bus"
 RABBITMQ = "rabbitmq"
 
 
-async def create_ingest_messaging(
-    provider: str | None = None,
-) -> IngestMessaging:
-    selected_provider = provider or _configured_provider()
-    normalized_provider = selected_provider.strip().lower()
+async def create_ingest_messaging() -> IngestMessaging:
+    azure = await _create_azure_messaging()
+    try:
+        rabbitmq = await _create_rabbitmq_messaging()
+    except Exception:
+        await azure.close()
+        raise
 
-    if normalized_provider == AZURE_SERVICE_BUS:
-        return await _create_azure_messaging()
-    if normalized_provider == RABBITMQ:
-        return await _create_rabbitmq_messaging()
-    raise RuntimeError(
-        "Unsupported QUEUE_PROVIDER "
-        f"'{selected_provider}'. Expected '{AZURE_SERVICE_BUS}' or '{RABBITMQ}'."
+    resources = MessagingResourceGroup([azure.close, rabbitmq.close])
+    try:
+        provider_dispatchers = {
+            AZURE_SERVICE_BUS: azure.dispatchers,
+            RABBITMQ: rabbitmq.dispatchers,
+        }
+        consumers = create_composite_consumers(
+            {
+                AZURE_SERVICE_BUS: azure.consumers,
+                RABBITMQ: rabbitmq.consumers,
+            }
+        )
+        resolver = ScopedQueueRoutingResolver(_queue_routing_resolver_scope)
+        dispatchers = create_routing_dispatchers(
+            resolver,
+            MessagingProviderRegistry(provider_dispatchers),
+        )
+    except Exception:
+        await resources.close()
+        raise
+
+    return IngestMessaging(
+        consumers=consumers,
+        dispatchers=dispatchers,
+        _close_callback=resources.close,
     )
 
 
-def _configured_provider() -> str:
+@asynccontextmanager
+async def _queue_routing_resolver_scope(
+) -> AsyncIterator[QueueRoutingResolver]:
+    from bootstrap.database import async_session_factory
+    from module.ingest.config.application.services.queue_routing_resolver import (
+        IngestionJobQueueRoutingResolver,
+    )
+    from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
+        IngestionConfigRepositoryImpl,
+    )
+    from module.knowledge_space.application.services.queue_provider_resolver import (
+        KnowledgeSpaceQueueProviderResolver,
+    )
+    from module.knowledge_space.infrastructure.persistence.repositories.knowledge_space_queue_repository_impl import (
+        KnowledgeSpaceQueueRepositoryImpl,
+    )
     from shared.config.settings import settings
 
-    return settings.QUEUE_PROVIDER
+    async with async_session_factory() as session:
+        yield IngestionJobQueueRoutingResolver(
+            ingestion_repository=IngestionConfigRepositoryImpl(
+                session
+            ),
+            queue_provider_resolver=(
+                KnowledgeSpaceQueueProviderResolver(
+                    KnowledgeSpaceQueueRepositoryImpl(session),
+                    fallback_provider_code=settings.QUEUE_PROVIDER,
+                )
+            ),
+        )
 
 
 async def _create_azure_messaging() -> IngestMessaging:
