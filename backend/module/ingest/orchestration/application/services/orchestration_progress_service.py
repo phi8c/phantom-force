@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from module.ingest.orchestration.domain.contracts import (
@@ -7,6 +8,9 @@ from module.ingest.orchestration.domain.enums import BatchStatus
 from module.ingest.orchestration.domain.enums import IngestionStage
 from module.ingest.orchestration.domain.enums import OrchestrationEventType
 from module.ingest.orchestration.domain.enums import StageStatus
+
+
+logger = logging.getLogger(__name__)
 
 
 class NoOpOrchestrationProgressService:
@@ -82,6 +86,10 @@ class OrchestrationProgressService:
     ) -> UUID | None:
 
         if not document_ids:
+            logger.info(
+                "orchestration batch_skipped job_id=%s reason=no_documents",
+                ingestion_job_id,
+            )
             return None
 
         result = await self.repository.create_discovery_batch(
@@ -92,7 +100,20 @@ class OrchestrationProgressService:
         batch_id = result.ingestion_batch_id
 
         if not result.created:
+            logger.info(
+                "orchestration batch_exists job_id=%s batch_id=%s documents=%s",
+                ingestion_job_id,
+                batch_id,
+                len(document_ids),
+            )
             return batch_id
+
+        logger.info(
+            "orchestration batch_created job_id=%s batch_id=%s documents=%s",
+            ingestion_job_id,
+            batch_id,
+            len(document_ids),
+        )
 
         await self.repository.append_event(
             ingestion_job_id=ingestion_job_id,
@@ -240,6 +261,13 @@ class OrchestrationProgressService:
         )
 
         if batch_id is None:
+            logger.warning(
+                "orchestration stage_not_recorded job_id=%s document_id=%s stage=%s status=%s reason=batch_not_found",
+                ingestion_job_id,
+                document_id,
+                stage.value,
+                status.value,
+            )
             return
 
         await self.repository.upsert_stage_state(
@@ -270,6 +298,14 @@ class OrchestrationProgressService:
             if error
             else {},
         )
+        logger.info(
+            "orchestration stage_updated job_id=%s batch_id=%s document_id=%s stage=%s status=%s",
+            ingestion_job_id,
+            batch_id,
+            document_id,
+            stage.value,
+            status.value,
+        )
 
         if (
             batch_status_result.changed
@@ -290,4 +326,10 @@ class OrchestrationProgressService:
                         batch_status_result.status.value
                     ),
                 },
+            )
+            logger.info(
+                "orchestration batch_completed job_id=%s batch_id=%s status=%s",
+                ingestion_job_id,
+                batch_id,
+                batch_status_result.status.value,
             )

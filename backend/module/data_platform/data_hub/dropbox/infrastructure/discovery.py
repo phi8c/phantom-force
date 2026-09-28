@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Any
 
 from module.data_platform.data_hub.shared.domain.contracts.discovery_provider import (
@@ -19,6 +20,9 @@ from module.data_platform.data_hub.shared.domain.value_objects.source_reference 
 from ..domain.configuration import DropboxConfiguration
 from ..domain.contracts.client import DropboxClient
 from ..domain.entities.client_models import DropboxEntry
+
+
+logger = logging.getLogger(__name__)
 
 
 class DropboxDiscoveryProvider(DiscoveryProvider):
@@ -40,6 +44,13 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
             raise ValueError("Discovery limit must be greater than 0.")
 
         source_paths = self._source_paths(source)
+        logger.info(
+            "dropbox discovery_start source_id=%s roots=%s limit=%s has_cursor=%s",
+            source.identifier,
+            len(source_paths),
+            limit,
+            cursor is not None,
+        )
         (
             root_index,
             pending,
@@ -108,6 +119,14 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
                 "started": started,
                 "seen_file_ids": sorted(seen_file_ids),
             }
+        logger.info(
+            "dropbox discovery_done source_id=%s items=%s has_more=%s root_index=%s pending=%s",
+            source.identifier,
+            len(items),
+            has_more,
+            root_index,
+            len(pending),
+        )
         return DiscoveryPage(items=items, next_cursor=next_cursor, has_more=has_more)
 
     def _restore_cursor(

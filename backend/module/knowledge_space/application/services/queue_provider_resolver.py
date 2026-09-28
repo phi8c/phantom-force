@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from module.knowledge_space.domain.contracts.knowledge_space_queue_repository import (
@@ -8,6 +9,9 @@ from module.knowledge_space.domain.contracts.knowledge_space_queue_repository im
 from module.knowledge_space.domain.contracts.queue_provider_resolver import (
     QueueProviderResolver,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class QueueProviderConfigurationError(ValueError):
@@ -32,6 +36,11 @@ class KnowledgeSpaceQueueProviderResolver(QueueProviderResolver):
             knowledge_space_id
         )
         if mapping is None:
+            logger.info(
+                "queue provider fallback knowledge_space_id=%s queue_provider=%s",
+                knowledge_space_id,
+                self._fallback_provider_code,
+            )
             return self._fallback_provider_code
         if not mapping.enabled:
             raise QueueProviderConfigurationError(
@@ -45,10 +54,16 @@ class KnowledgeSpaceQueueProviderResolver(QueueProviderResolver):
             raise QueueProviderConfigurationError(
                 f"Queue provider '{mapping.provider.code}' is disabled."
             )
-        return self._normalize_code(
+        provider_code = self._normalize_code(
             mapping.provider.code,
             field_name="queue provider code",
         )
+        logger.info(
+            "queue provider mapping knowledge_space_id=%s queue_provider=%s",
+            knowledge_space_id,
+            provider_code,
+        )
+        return provider_code
 
     @staticmethod
     def _normalize_code(value: str, *, field_name: str) -> str:

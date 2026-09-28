@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,6 +35,9 @@ from module.master_data.data_hub_providers.infrastructure.persistence.repositori
 from .schemas import BrowseRequest, BrowseResponse, DataHubBrowseNodeResponse
 
 
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter(prefix="/data-hub/knowledge-spaces", tags=["Data Hub"])
 
 
@@ -53,7 +57,10 @@ async def browse_root(
     knowledge_space_id: UUID,
     service: DataHubBrowserService = Depends(get_browser_service),
 ) -> BrowseResponse:
-    return await _execute(service.browse_root(knowledge_space_id))
+    return await _execute(
+        service.browse_root(knowledge_space_id),
+        knowledge_space_id,
+    )
 
 
 @router.post("/{knowledge_space_id}/browse", response_model=BrowseResponse)
@@ -62,21 +69,43 @@ async def browse_children(
     request: BrowseRequest,
     service: DataHubBrowserService = Depends(get_browser_service),
 ) -> BrowseResponse:
-    return await _execute(service.browse_children(knowledge_space_id, request.locator))
+    return await _execute(
+        service.browse_children(knowledge_space_id, request.locator),
+        knowledge_space_id,
+    )
 
 
-async def _execute(operation) -> BrowseResponse:
+async def _execute(operation, knowledge_space_id: UUID) -> BrowseResponse:
     try:
         result = await operation
     except DataHubConfigurationNotFoundError as exc:
+        logger.warning(
+            "Data Hub browse configuration not found for knowledge_space_id=%s: %s",
+            knowledge_space_id,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except DataHubConfigurationDisabledError as exc:
+        logger.warning(
+            "Data Hub browse configuration disabled for knowledge_space_id=%s: %s",
+            knowledge_space_id,
+            exc,
+        )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except UnsupportedBrowserProviderError as exc:
+        logger.warning(
+            "Data Hub browser provider unsupported for knowledge_space_id=%s: %s",
+            knowledge_space_id,
+            exc,
+        )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except InvalidBrowseLocatorError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception(
+            "Data Hub provider request failed for knowledge_space_id=%s",
+            knowledge_space_id,
+        )
         raise HTTPException(status_code=502, detail="Data Hub provider request failed.") from exc
     return _response(result)
 

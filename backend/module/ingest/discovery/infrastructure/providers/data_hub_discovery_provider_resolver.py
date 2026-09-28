@@ -1,3 +1,5 @@
+import logging
+
 from module.data_platform.data_hub.sharepoint.composition import (
     DataHubProviderResolver,
 )
@@ -13,6 +15,9 @@ from module.ingest.discovery.domain.contracts.discovery_provider import (
 from module.ingest.discovery.domain.contracts.discovery_provider_resolver import (
     DiscoveryProviderResolver,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataHubDiscoveryProviderResolver(
@@ -34,12 +39,27 @@ class DataHubDiscoveryProviderResolver(
         configuration: dict | None = None,
     ) -> DiscoveryProvider:
 
-        data_hub_provider = (
-            self._data_hub_provider_resolver
-            .resolve(
+        logger.info(
+            "data_hub discovery_provider_resolving provider=%s",
+            provider,
+        )
+
+        try:
+            data_hub_provider = self._data_hub_provider_resolver.resolve(
                 provider=provider,
                 configuration=configuration,
             )
+        except Exception:
+            logger.exception(
+                "data_hub discovery_provider_resolve_failed provider=%s",
+                provider,
+            )
+            raise
+
+        logger.info(
+            "data_hub discovery_provider_resolved provider=%s implementation=%s",
+            provider,
+            type(data_hub_provider).__name__,
         )
 
         return DataHubDiscoveryProvider(
@@ -65,6 +85,14 @@ class DataHubDiscoveryProvider(
         limit: int = 100,
     ) -> DiscoveryPage:
 
+        logger.info(
+            "data_hub discovery_start provider=%s source_id=%s limit=%s has_cursor=%s",
+            source.provider,
+            source.identifier,
+            limit,
+            cursor is not None,
+        )
+
         page = await self._discovery_provider.discover(
             source=DataHubSourceReference(
                 provider=source.provider,
@@ -73,6 +101,14 @@ class DataHubDiscoveryProvider(
             ),
             cursor=cursor,
             limit=limit,
+        )
+
+        logger.info(
+            "data_hub discovery_done provider=%s source_id=%s items=%s has_more=%s",
+            source.provider,
+            source.identifier,
+            len(page.items),
+            page.has_more,
         )
 
         return DiscoveryPage(

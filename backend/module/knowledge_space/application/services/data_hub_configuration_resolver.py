@@ -64,7 +64,7 @@ class KnowledgeSpaceDataHubConfigurationResolver:
                 f"Data Hub provider '{provider.code}' is disabled."
             )
 
-        provider_code = (provider.provider or provider.code).strip().lower()
+        provider_code = provider.code.strip().lower()
         if not provider_code:
             raise ValueError("Data Hub provider code must not be empty.")
         return ResolvedDataHubConfiguration(

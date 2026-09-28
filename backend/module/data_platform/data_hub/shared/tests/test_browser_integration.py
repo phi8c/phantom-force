@@ -184,6 +184,27 @@ class ConfigurationResolverTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(DataHubConfigurationDisabledError):
             await resolver.resolve(uuid4())
 
+    async def test_resolves_provider_by_code_not_provider_category(self) -> None:
+        mapping = SimpleNamespace(
+            id=uuid4(),
+            enabled=True,
+            data_hub_provider_id=uuid4(),
+            configuration={"root_path": "/files"},
+        )
+        provider = SimpleNamespace(
+            enabled=True,
+            code="dropbox",
+            provider="data-hub",
+        )
+        resolver = KnowledgeSpaceDataHubConfigurationResolver(
+            SimpleNamespace(get_by_knowledge_space_id=AsyncMock(return_value=mapping)),
+            SimpleNamespace(get_by_id=AsyncMock(return_value=provider)),
+        )
+
+        resolved = await resolver.resolve(uuid4())
+
+        self.assertEqual(resolved.provider, "dropbox")
+
     async def test_missing_provider_fails(self) -> None:
         mapping = SimpleNamespace(
             id=uuid4(),

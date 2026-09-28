@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 import aio_pika
+
+
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQPublisher:
@@ -31,6 +35,11 @@ class RabbitMQPublisher:
             ),
             routing_key=queue_name,
         )
+        logger.info(
+            "rabbitmq published queue=%s job_id=%s",
+            queue_name,
+            payload.get("ingestion_job_id"),
+        )
 
     async def _declare_queue(self, queue_name: str) -> None:
         if queue_name in self._declared_queues:
@@ -45,3 +54,4 @@ class RabbitMQPublisher:
                 exclusive=False,
             )
             self._declared_queues.add(queue_name)
+            logger.info("rabbitmq queue_declared queue=%s", queue_name)

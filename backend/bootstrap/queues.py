@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
+import logging
 
 from shared.messaging.composition import (
     DispatcherProviderRegistry,
@@ -24,13 +25,26 @@ from shared.messaging.routing import (
 
 AZURE_SERVICE_BUS = "azure_service_bus"
 RABBITMQ = "rabbitmq"
+logger = logging.getLogger(__name__)
 
 
 async def create_ingest_messaging() -> IngestMessaging:
-    azure = await _create_azure_messaging()
+    logger.info("ingest messaging_start providers=%s,%s", AZURE_SERVICE_BUS, RABBITMQ)
+    try:
+        azure = await _create_azure_messaging()
+    except Exception:
+        logger.exception(
+            "ingest messaging_provider_failed provider=%s",
+            AZURE_SERVICE_BUS,
+        )
+        raise
     try:
         rabbitmq = await _create_rabbitmq_messaging()
     except Exception:
+        logger.exception(
+            "ingest messaging_provider_failed provider=%s",
+            RABBITMQ,
+        )
         await azure.close()
         raise
 
@@ -53,14 +67,17 @@ async def create_ingest_messaging() -> IngestMessaging:
         await resources.close()
         raise
 
-    return IngestMessaging(
+    messaging = IngestMessaging(
         consumers=consumers,
         dispatchers=dispatchers,
         _close_callback=resources.close,
     )
+    logger.info("ingest messaging_ready providers=%s,%s", AZURE_SERVICE_BUS, RABBITMQ)
+    return messaging
 
 
 async def create_ingest_producer() -> IngestProducer:
+    logger.info("ingest producer_start lazy_providers=%s,%s", AZURE_SERVICE_BUS, RABBITMQ)
     registry = LazyMessagingProviderRegistry(
         {
             AZURE_SERVICE_BUS: _create_azure_producer,
@@ -69,10 +86,12 @@ async def create_ingest_producer() -> IngestProducer:
     )
     dispatchers = _create_provider_aware_dispatchers(registry)
 
-    return IngestProducer(
+    producer = IngestProducer(
         dispatchers=dispatchers,
         _close_callback=registry.close,
     )
+    logger.info("ingest producer_ready")
+    return producer
 
 
 def _create_provider_aware_dispatchers(
@@ -124,6 +143,7 @@ async def _create_azure_messaging() -> IngestMessaging:
         create_ingest_queue_clients,
     )
 
+    logger.info("ingest messaging_provider_start provider=%s", AZURE_SERVICE_BUS)
     clients = create_ingest_queue_clients()
     try:
         dispatchers = create_ingest_dispatchers(clients)
@@ -139,7 +159,7 @@ async def _create_azure_messaging() -> IngestMessaging:
         embedding=clients.embedding,
         classification=clients.classification,
     )
-    return IngestMessaging(
+    messaging = IngestMessaging(
         consumers=consumers,
         dispatchers=dispatchers,
         _close_callback=partial(
@@ -147,6 +167,8 @@ async def _create_azure_messaging() -> IngestMessaging:
             clients,
         ),
     )
+    logger.info("ingest messaging_provider_ready provider=%s", AZURE_SERVICE_BUS)
+    return messaging
 
 
 async def _create_rabbitmq_messaging() -> IngestMessaging:
@@ -155,6 +177,7 @@ async def _create_rabbitmq_messaging() -> IngestMessaging:
         create_rabbitmq_dispatchers,
     )
 
+    logger.info("ingest messaging_provider_start provider=%s", RABBITMQ)
     resources = await create_rabbitmq_consumers()
     try:
         dispatchers = await create_rabbitmq_dispatchers(resources)
@@ -162,11 +185,13 @@ async def _create_rabbitmq_messaging() -> IngestMessaging:
         await resources.close()
         raise
 
-    return IngestMessaging(
+    messaging = IngestMessaging(
         consumers=resources.consumers,
         dispatchers=dispatchers,
         _close_callback=resources.close,
     )
+    logger.info("ingest messaging_provider_ready provider=%s", RABBITMQ)
+    return messaging
 
 
 async def _create_azure_producer() -> IngestProducer:
@@ -174,7 +199,16 @@ async def _create_azure_producer() -> IngestProducer:
         create_azure_producer,
     )
 
-    resources = await create_azure_producer()
+    logger.info("ingest producer_provider_start provider=%s", AZURE_SERVICE_BUS)
+    try:
+        resources = await create_azure_producer()
+    except Exception:
+        logger.exception(
+            "ingest producer_provider_failed provider=%s",
+            AZURE_SERVICE_BUS,
+        )
+        raise
+    logger.info("ingest producer_provider_ready provider=%s", AZURE_SERVICE_BUS)
     return IngestProducer(
         dispatchers=resources.dispatchers,
         _close_callback=resources.close,
@@ -186,7 +220,16 @@ async def _create_rabbitmq_producer() -> IngestProducer:
         create_rabbitmq_producer,
     )
 
-    resources = await create_rabbitmq_producer()
+    logger.info("ingest producer_provider_start provider=%s", RABBITMQ)
+    try:
+        resources = await create_rabbitmq_producer()
+    except Exception:
+        logger.exception(
+            "ingest producer_provider_failed provider=%s",
+            RABBITMQ,
+        )
+        raise
+    logger.info("ingest producer_provider_ready provider=%s", RABBITMQ)
     return IngestProducer(
         dispatchers=resources.dispatchers,
         _close_callback=resources.close,

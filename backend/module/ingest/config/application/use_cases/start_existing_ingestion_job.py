@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from module.ingest.config.application.dtos.start_existing_ingestion_job import (
@@ -23,6 +24,9 @@ from module.knowledge_space.domain.contracts.knowledge_space_data_hub_repository
 from module.master_data.data_hub_providers.domain.contracts.data_hub_provider_repository import (
     DataHubProviderRepository,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class StartExistingIngestionJobUseCase:
@@ -53,6 +57,11 @@ class StartExistingIngestionJobUseCase:
         self,
         command: StartExistingIngestionJobCommand,
     ) -> StartExistingIngestionJobResult:
+        logger.info(
+            "ingest start_requested job_id=%s batch_size=%s",
+            command.ingestion_job_id,
+            command.batch_size,
+        )
         self._validate_batch_size(
             command.batch_size,
         )
@@ -78,9 +87,22 @@ class StartExistingIngestionJobUseCase:
                 "ingestion job id was not generated"
             )
 
-        await self._discovery_dispatcher.dispatch(
-            ingestion_job_id=job.id,
-            batch_size=command.batch_size,
+        try:
+            await self._discovery_dispatcher.dispatch(
+                ingestion_job_id=job.id,
+                batch_size=command.batch_size,
+            )
+        except Exception:
+            logger.exception(
+                "ingest discovery_dispatch_failed job_id=%s",
+                job.id,
+            )
+            raise
+
+        logger.info(
+            "ingest queued job_id=%s batch_size=%s",
+            job.id,
+            command.batch_size,
         )
 
         return StartExistingIngestionJobResult(
@@ -170,11 +192,31 @@ class StartExistingIngestionJobUseCase:
                 "ingestion job scope_data.roots is required before start"
             )
 
+        root_format: str | None = None
+
         for root in roots:
             if not isinstance(root, dict):
                 raise ValueError(
                     "ingestion job scope roots must be objects"
                 )
+
+            is_generic = "locator" in root
+            current_format = "generic" if is_generic else "legacy"
+            if root_format is None:
+                root_format = current_format
+            elif root_format != current_format:
+                raise ValueError(
+                    "ingestion job scope roots cannot mix generic locator "
+                    "and legacy SharePoint roots"
+                )
+
+            if is_generic:
+                locator = root.get("locator")
+                if not isinstance(locator, dict) or not locator:
+                    raise ValueError(
+                        "ingestion job scope root locator must be a non-empty object"
+                    )
+                continue
 
             if not str(root.get("site_id") or "").strip():
                 raise ValueError(

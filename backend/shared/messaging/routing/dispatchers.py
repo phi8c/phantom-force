@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from module.ingest.chunking.domain.contracts.chunking_dispatcher import (
@@ -32,6 +33,9 @@ from shared.messaging.contracts.queue_routing_resolver import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class _RoutingDispatcher:
     def __init__(
         self,
@@ -44,9 +48,16 @@ class _RoutingDispatcher:
     async def _provider_dispatchers(
         self,
         ingestion_job_id: UUID,
+        stage: str,
     ) -> IngestDispatchers:
         provider_code = await self._resolver.resolve_for_job(
             ingestion_job_id
+        )
+        logger.info(
+            "ingest dispatch route_resolved job_id=%s stage=%s queue_provider=%s",
+            ingestion_job_id,
+            stage,
+            provider_code,
         )
         return await self._registry.get(provider_code)
 
@@ -61,7 +72,10 @@ class RoutingDiscoveryDispatcher(
         ingestion_job_id: UUID,
         batch_size: int,
     ) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "discovery",
+        )
         await dispatchers.discovery.dispatch(
             ingestion_job_id,
             batch_size,
@@ -70,7 +84,10 @@ class RoutingDiscoveryDispatcher(
 
 class RoutingDownloadDispatcher(_RoutingDispatcher, DownloadDispatcher):
     async def dispatch(self, ingestion_job_id: UUID) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "download",
+        )
         await dispatchers.download.dispatch(ingestion_job_id)
 
 
@@ -79,19 +96,28 @@ class RoutingExtractionDispatcher(
     ExtractionDispatcher,
 ):
     async def dispatch(self, ingestion_job_id: UUID) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "extraction",
+        )
         await dispatchers.extraction.dispatch(ingestion_job_id)
 
 
 class RoutingChunkingDispatcher(_RoutingDispatcher, ChunkingDispatcher):
     async def dispatch(self, ingestion_job_id: UUID) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "chunking",
+        )
         await dispatchers.chunking.dispatch(ingestion_job_id)
 
 
 class RoutingEmbeddingDispatcher(_RoutingDispatcher, EmbeddingDispatcher):
     async def dispatch_job(self, ingestion_job_id: UUID) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "embedding",
+        )
         await dispatchers.embedding.dispatch_job(ingestion_job_id)
 
 
@@ -100,7 +126,10 @@ class RoutingClassificationDispatcher(
     ClassificationDispatcher,
 ):
     async def dispatch_job(self, ingestion_job_id: UUID) -> None:
-        dispatchers = await self._provider_dispatchers(ingestion_job_id)
+        dispatchers = await self._provider_dispatchers(
+            ingestion_job_id,
+            "classification",
+        )
         await dispatchers.classification.dispatch_job(ingestion_job_id)
 
 

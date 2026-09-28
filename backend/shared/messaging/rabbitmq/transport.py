@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -11,6 +12,7 @@ from .publisher import RabbitMQPublisher
 
 
 ConnectFunction = Callable[..., Awaitable[Any]]
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQTransport:
@@ -54,19 +56,33 @@ class RabbitMQTransport:
                 exclusive=False,
             )
         except Exception:
+            logger.exception(
+                "rabbitmq consumer_create_failed queue=%s",
+                queue_name,
+            )
             await channel.close()
             raise
 
         self._channels.append(channel)
-        return RabbitMQMessageConsumer(queue)
+        logger.info(
+            "rabbitmq consumer_ready queue=%s prefetch_count=%s",
+            queue_name,
+            prefetch_count,
+        )
+        return RabbitMQMessageConsumer(queue, queue_name=queue_name)
 
     async def create_publisher(self) -> RabbitMQPublisher:
         connection = await self._get_connection()
         channel = await connection.channel()
         self._channels.append(channel)
+        logger.info("rabbitmq publisher_ready")
         return RabbitMQPublisher(channel)
 
     async def close(self) -> None:
+        logger.info(
+            "rabbitmq transport_closing channels=%s",
+            len(self._channels),
+        )
         for channel in reversed(self._channels):
             if not getattr(channel, "is_closed", False):
                 await channel.close()
@@ -76,6 +92,7 @@ class RabbitMQTransport:
             if not getattr(self._connection, "is_closed", False):
                 await self._connection.close()
             self._connection = None
+        logger.info("rabbitmq transport_closed")
 
     async def _get_connection(self) -> Any:
         if self._connection is not None and not getattr(
@@ -91,8 +108,14 @@ class RabbitMQTransport:
                 "is_closed",
                 False,
             ):
-                self._connection = await self._connect(
-                    self._url,
-                    timeout=self._connection_timeout,
-                )
+                logger.info("rabbitmq connecting")
+                try:
+                    self._connection = await self._connect(
+                        self._url,
+                        timeout=self._connection_timeout,
+                    )
+                except Exception:
+                    logger.exception("rabbitmq connection_failed")
+                    raise
+                logger.info("rabbitmq connected")
             return self._connection

@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from shared.messaging.contracts import MessageConsumer, ReceivedMessage
 
 
+logger = logging.getLogger(__name__)
+
+
 class RabbitMQReceivedMessage(ReceivedMessage):
-    def __init__(self, raw_message: Any) -> None:
+    def __init__(self, raw_message: Any, *, queue_name: str | None = None) -> None:
         self._raw_message = raw_message
+        self._queue_name = queue_name
         self._payload: dict[str, Any] | None = None
 
     @property
@@ -20,9 +25,28 @@ class RabbitMQReceivedMessage(ReceivedMessage):
 
     async def ack(self) -> None:
         await self._raw_message.ack()
+        logger.info(
+            "rabbitmq acknowledged queue=%s job_id=%s",
+            self._queue_name,
+            (
+                self._payload.get("ingestion_job_id")
+                if self._payload is not None
+                else None
+            ),
+        )
 
     async def nack(self, *, requeue: bool = True) -> None:
         await self._raw_message.nack(requeue=requeue)
+        logger.warning(
+            "rabbitmq rejected queue=%s job_id=%s requeue=%s",
+            self._queue_name,
+            (
+                self._payload.get("ingestion_job_id")
+                if self._payload is not None
+                else None
+            ),
+            requeue,
+        )
 
     @staticmethod
     def _parse_payload(body: bytes) -> dict[str, Any]:
@@ -38,8 +62,9 @@ class RabbitMQReceivedMessage(ReceivedMessage):
 class RabbitMQMessageConsumer(MessageConsumer):
     EMPTY_QUEUE_POLL_INTERVAL = 0.1
 
-    def __init__(self, queue: Any) -> None:
+    def __init__(self, queue: Any, *, queue_name: str | None = None) -> None:
         self._queue = queue
+        self._queue_name = queue_name
 
     async def receive(
         self,
@@ -73,6 +98,17 @@ class RabbitMQMessageConsumer(MessageConsumer):
                     min(self.EMPTY_QUEUE_POLL_INTERVAL, remaining)
                 )
                 continue
-            received.append(RabbitMQReceivedMessage(raw_message))
+            received.append(
+                RabbitMQReceivedMessage(
+                    raw_message,
+                    queue_name=self._queue_name,
+                )
+            )
 
+        if received:
+            logger.info(
+                "rabbitmq received queue=%s count=%s",
+                self._queue_name,
+                len(received),
+            )
         return received

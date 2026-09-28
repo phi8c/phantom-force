@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from module.ingest.config.domain.contracts.ingestion_config_repository import (
@@ -11,6 +12,9 @@ from module.knowledge_space.domain.contracts.queue_provider_resolver import (
 from shared.messaging.contracts.queue_routing_resolver import (
     QueueRoutingResolver,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionJobQueueRoutingResolver(QueueRoutingResolver):
@@ -30,6 +34,13 @@ class IngestionJobQueueRoutingResolver(QueueRoutingResolver):
             raise LookupError(
                 f"Ingestion job '{ingestion_job_id}' was not found."
             )
-        return await self._queue_provider_resolver.resolve(
+        provider_code = await self._queue_provider_resolver.resolve(
             job.knowledge_space_id
         )
+        logger.info(
+            "ingest queue route job_id=%s knowledge_space_id=%s queue_provider=%s",
+            ingestion_job_id,
+            job.knowledge_space_id,
+            provider_code,
+        )
+        return provider_code

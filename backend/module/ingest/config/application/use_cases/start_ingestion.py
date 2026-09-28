@@ -1,5 +1,6 @@
 from datetime import datetime
 from datetime import timezone
+import logging
 from uuid import UUID
 
 from module.ingest.config.application.dtos.start_ingestion import (
@@ -33,6 +34,9 @@ from module.ingest.master.model_set.domain.contracts.model_set_repository import
 from module.knowledge_space.domain.contracts.knowledge_space_repository import (
     KnowledgeSpaceRepository,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class StartIngestionUseCase:
@@ -69,6 +73,12 @@ class StartIngestionUseCase:
         command: StartIngestionCommand,
     ) -> StartIngestionResult:
 
+        logger.info(
+            "ingest create_and_start_requested knowledge_space_id=%s batch_size=%s",
+            command.knowledge_space_id,
+            command.batch_size,
+        )
+
         try:
             job_id = await self._create_job(
                 command,
@@ -79,9 +89,22 @@ class StartIngestionUseCase:
             await self.uow.rollback()
             raise
 
-        await self.discovery_dispatcher.dispatch(
-            ingestion_job_id=job_id,
-            batch_size=command.batch_size,
+        try:
+            await self.discovery_dispatcher.dispatch(
+                ingestion_job_id=job_id,
+                batch_size=command.batch_size,
+            )
+        except Exception:
+            logger.exception(
+                "ingest discovery_dispatch_failed job_id=%s",
+                job_id,
+            )
+            raise
+
+        logger.info(
+            "ingest queued job_id=%s batch_size=%s",
+            job_id,
+            command.batch_size,
         )
 
         return StartIngestionResult(
