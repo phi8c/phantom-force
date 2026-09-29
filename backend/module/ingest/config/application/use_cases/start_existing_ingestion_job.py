@@ -117,6 +117,20 @@ class StartExistingIngestionJobUseCase:
         job = await self._ingestion_config_repository.get_job_by_id(
             ingestion_job_id,
         )
+        scope_data = getattr(job, "scope_data", None)
+        roots = (
+            scope_data.get("roots")
+            if isinstance(scope_data, dict)
+            else None
+        )
+        logger.info(
+            "ingest validation_result job_id=%s job_found=%s knowledge_space_id=%s scope_type=%s root_count=%s",
+            ingestion_job_id,
+            job is not None,
+            getattr(job, "knowledge_space_id", None),
+            getattr(job, "scope_type", None),
+            len(roots) if isinstance(roots, list) else None,
+        )
 
         if job is None or job.id is None:
             raise LookupError(
@@ -128,6 +142,11 @@ class StartExistingIngestionJobUseCase:
             .get_configuration_by_job_id(
                 ingestion_job_id,
             )
+        )
+        logger.info(
+            "ingest validation_result job_id=%s configuration_found=%s",
+            ingestion_job_id,
+            configuration is not None,
         )
 
         if configuration is None:
@@ -146,6 +165,14 @@ class StartExistingIngestionJobUseCase:
                 job.knowledge_space_id,
             )
         )
+        logger.info(
+            "ingest validation_result job_id=%s data_hub_found=%s data_hub_id=%s data_hub_enabled=%s provider_id=%s",
+            ingestion_job_id,
+            data_hub is not None,
+            getattr(data_hub, "id", None),
+            getattr(data_hub, "enabled", None),
+            getattr(data_hub, "data_hub_provider_id", None),
+        )
 
         if (
             data_hub is None
@@ -158,6 +185,13 @@ class StartExistingIngestionJobUseCase:
 
         provider = await self._data_hub_provider_repository.get_by_id(
             data_hub.data_hub_provider_id,
+        )
+        logger.info(
+            "ingest validation_result job_id=%s provider_found=%s provider_code=%s provider_enabled=%s",
+            ingestion_job_id,
+            provider is not None,
+            getattr(provider, "code", None),
+            getattr(provider, "enabled", None),
         )
 
         if provider is None or not provider.enabled:

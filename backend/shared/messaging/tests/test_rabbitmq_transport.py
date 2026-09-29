@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
 from shared.messaging.rabbitmq.consumer import RabbitMQMessageConsumer
@@ -9,29 +10,48 @@ from shared.messaging.rabbitmq.transport import RabbitMQTransport
 class FakeIncomingMessage:
     def __init__(self, body: bytes) -> None:
         self.body = body
-        self.acked = False
-        self.nack_requeue = None
+        self.ack_count = 0
+        self.nack_calls = []
 
     async def ack(self) -> None:
-        self.acked = True
+        self.ack_count += 1
 
     async def nack(self, *, requeue: bool = True) -> None:
-        self.nack_requeue = requeue
+        self.nack_calls.append(requeue)
 
 
 class FakeQueue:
-    def __init__(self, messages: list[FakeIncomingMessage | None]) -> None:
+    def __init__(self, messages: list[FakeIncomingMessage] | None = None) -> None:
         self.messages = messages
-        self.get_calls = []
+        self.consume_calls = []
+        self.cancel_calls = []
+        self.callback = None
+        self.channel = None
+
+    async def consume(self, callback, *, no_ack: bool):
+        self.consume_calls.append({"no_ack": no_ack})
+        self.callback = callback
+        for message in self.messages or []:
+            await callback(message)
+        self.messages = []
+        return "consumer-tag"
+
+    async def cancel(self, consumer_tag: str) -> None:
+        self.cancel_calls.append(consumer_tag)
+
+    async def push(self, message: FakeIncomingMessage) -> None:
+        if self.callback is None:
+            raise AssertionError("Consumer has not been registered")
+        await self.callback(message)
 
     async def get(self, **kwargs):
-        self.get_calls.append(kwargs)
-        return self.messages.pop(0) if self.messages else None
+        raise AssertionError("Basic.Get must not be used")
 
 
 class FakeChannel:
     def __init__(self, queue: FakeQueue) -> None:
         self.queue = queue
+        self.queue.channel = self
         self.qos = None
         self.declaration = None
         self.is_closed = False
@@ -66,15 +86,18 @@ class RabbitMQTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_message_parses_json_and_maps_ack_nack(self) -> None:
         first = FakeIncomingMessage(b'{"ingestion_job_id":"job-1"}')
         second = FakeIncomingMessage(b'{"ingestion_job_id":"job-2"}')
-        consumer = RabbitMQMessageConsumer(FakeQueue([first, second]))
+        third = FakeIncomingMessage(b'{"ingestion_job_id":"job-3"}')
+        consumer = RabbitMQMessageConsumer(FakeQueue([first, second, third]))
 
-        messages = await consumer.receive(max_messages=2, wait_timeout=1)
+        messages = await consumer.receive(max_messages=3, wait_timeout=1)
         await messages[0].ack()
         await messages[1].nack(requeue=True)
+        await messages[2].nack(requeue=False)
 
         self.assertEqual(messages[0].payload["ingestion_job_id"], "job-1")
-        self.assertTrue(first.acked)
-        self.assertTrue(second.nack_requeue)
+        self.assertEqual(first.ack_count, 1)
+        self.assertEqual(second.nack_calls, [True])
+        self.assertEqual(third.nack_calls, [False])
 
     async def test_invalid_json_is_not_acknowledged(self) -> None:
         raw = FakeIncomingMessage(b"not-json")
@@ -87,8 +110,75 @@ class RabbitMQTransportTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "invalid JSON"):
             _ = message.payload
 
-        self.assertFalse(raw.acked)
-        self.assertIsNone(raw.nack_requeue)
+        self.assertEqual(raw.ack_count, 0)
+        self.assertEqual(raw.nack_calls, [])
+
+    async def test_empty_receive_times_out_without_basic_get_or_cancel(self) -> None:
+        queue = FakeQueue()
+        consumer = RabbitMQMessageConsumer(queue)
+
+        self.assertEqual(
+            await consumer.receive(wait_timeout=0.001),
+            [],
+        )
+        self.assertEqual(queue.consume_calls, [{"no_ack": False}])
+        self.assertEqual(queue.cancel_calls, [])
+
+    async def test_callback_pushes_message_to_receive(self) -> None:
+        queue = FakeQueue()
+        consumer = RabbitMQMessageConsumer(queue)
+        await consumer.start()
+        raw = FakeIncomingMessage(b'{"ingestion_job_id":"job"}')
+
+        await queue.push(raw)
+        messages = await consumer.receive(wait_timeout=0.01)
+
+        self.assertEqual(messages[0].payload["ingestion_job_id"], "job")
+
+    async def test_max_messages_preserves_remaining_messages(self) -> None:
+        raw_messages = [
+            FakeIncomingMessage(
+                f'{{"ingestion_job_id":"job-{index}"}}'.encode()
+            )
+            for index in range(3)
+        ]
+        consumer = RabbitMQMessageConsumer(FakeQueue(raw_messages))
+
+        first = await consumer.receive(max_messages=2, wait_timeout=0.01)
+        second = await consumer.receive(max_messages=2, wait_timeout=0.001)
+
+        self.assertEqual(len(first), 2)
+        self.assertEqual(len(second), 1)
+
+    async def test_repeated_empty_receive_registers_once(self) -> None:
+        queue = FakeQueue()
+        consumer = RabbitMQMessageConsumer(queue)
+
+        await consumer.receive(wait_timeout=0.001)
+        await consumer.receive(wait_timeout=0.001)
+
+        self.assertEqual(queue.consume_calls, [{"no_ack": False}])
+
+    async def test_concurrent_receive_registers_once(self) -> None:
+        queue = FakeQueue()
+        consumer = RabbitMQMessageConsumer(queue)
+
+        await asyncio.gather(
+            consumer.receive(wait_timeout=0.001),
+            consumer.receive(wait_timeout=0.001),
+        )
+
+        self.assertEqual(queue.consume_calls, [{"no_ack": False}])
+
+    async def test_close_cancels_registered_consumer_once(self) -> None:
+        queue = FakeQueue()
+        consumer = RabbitMQMessageConsumer(queue)
+        await consumer.start()
+
+        await consumer.close()
+        await consumer.close()
+
+        self.assertEqual(queue.cancel_calls, ["consumer-tag"])
 
     async def test_transport_reuses_connection_and_declares_durable_queues(self) -> None:
         channels = [
@@ -129,16 +219,23 @@ class RabbitMQTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(all(channel.is_closed for channel in channels))
         self.assertTrue(connection.is_closed)
+        self.assertEqual(
+            channels[0].queue.cancel_calls,
+            ["consumer-tag"],
+        )
+        self.assertEqual(
+            channels[1].queue.cancel_calls,
+            ["consumer-tag"],
+        )
 
-    async def test_receive_uses_manual_ack_mode(self) -> None:
+    async def test_consume_uses_manual_ack_mode(self) -> None:
         raw = FakeIncomingMessage(b'{"ingestion_job_id":"job"}')
         queue = FakeQueue([raw])
         consumer = RabbitMQMessageConsumer(queue)
 
         await consumer.receive(max_messages=1, wait_timeout=1)
 
-        self.assertEqual(queue.get_calls[0]["no_ack"], False)
-        self.assertEqual(queue.get_calls[0]["fail"], False)
+        self.assertEqual(queue.consume_calls, [{"no_ack": False}])
 
 
 if __name__ == "__main__":

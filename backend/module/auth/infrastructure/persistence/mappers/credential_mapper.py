@@ -1,8 +1,8 @@
-from app.domain.entities.credential import (
+from module.auth.domain.entities.credential import (
     Credential,
 )
 
-from app.infrastructure.persistence.models.credential_model import (
+from module.auth.infrastructure.persistence.models.credential_model import (
     CredentialModel,
 )
 

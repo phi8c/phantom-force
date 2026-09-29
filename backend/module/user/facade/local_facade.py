@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from uuid import uuid4
+
+from sqlalchemy.exc import IntegrityError
 
 from module.user.domain.contracts.user_repository import (
     UserRepository,
@@ -16,6 +18,7 @@ from module.user.domain.enums.user_status import (
 
 from .contract import UserModuleFacade
 from .dto import UserDTO
+from .exceptions import UserAlreadyExistsError
 
 
 class LocalUserFacade(
@@ -69,7 +72,7 @@ class LocalUserFacade(
         email: str,
     ) -> UserDTO:
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         entity = User(
             id=uuid4(),
@@ -82,9 +85,10 @@ class LocalUserFacade(
             deleted_at=None,
         )
 
-        created = await self._users.add(
-            entity,
-        )
+        try:
+            created = await self._users.add(entity)
+        except IntegrityError as exc:
+            raise UserAlreadyExistsError() from exc
 
         return self._to_dto(
             created,
@@ -93,6 +97,7 @@ class LocalUserFacade(
     async def mark_email_verified(
         self,
         user_id: UUID,
+        verified_at: datetime,
     ) -> None:
 
         user = await self._users.get_by_id(
@@ -104,9 +109,7 @@ class LocalUserFacade(
                 "User not found",
             )
 
-        now = datetime.utcnow()
-
-        user.email_verified_at = now
+        user.email_verified_at = verified_at
 
         if user.status == UserStatus.PENDING_VERIFICATION:
             user.status = UserStatus.ACTIVE
@@ -114,6 +117,19 @@ class LocalUserFacade(
         await self._users.update(
             user,
         )
+
+    async def activate_external_user(
+        self,
+        user_id: UUID,
+        email_verified_at: datetime | None,
+    ) -> None:
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise ValueError("User not found")
+        user.status = UserStatus.ACTIVE
+        if email_verified_at is not None:
+            user.email_verified_at = email_verified_at
+        await self._users.update(user)
 
     @staticmethod
     def _to_dto(

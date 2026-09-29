@@ -64,6 +64,18 @@ class VerificationTokenRepositoryImpl(
             model,
         )
 
+    async def get_by_token_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> VerificationToken | None:
+        result = await self.session.execute(
+            select(VerificationTokenModel)
+            .where(VerificationTokenModel.token_hash == token_hash)
+            .with_for_update()
+        )
+        model = result.scalar_one_or_none()
+        return VerificationTokenMapper.to_domain(model) if model else None
+
     async def add(
         self,
         entity: VerificationToken,

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from app.domain.unit_of_work.unit_of_work import (
+from module.auth.domain.contracts.unit_of_work import (
     UnitOfWork,
 )
 
@@ -16,6 +14,7 @@ from module.auth.domain.contracts.token_service import (
     TokenService,
 )
 from module.auth.application.dto.request.logout_request import LogoutRequest
+from module.auth.application.services.security_audit_service import SecurityAuditService
 
 
 
@@ -34,11 +33,13 @@ class LogoutUseCase:
         clock: Clock,
         token_service: TokenService,
         auth_session_repository: AuthSessionRepository,
+        security_audit: SecurityAuditService | None = None,
     ):
         self._uow = uow
         self._clock = clock
         self._token_service = token_service
         self._auth_sessions = auth_session_repository
+        self._audit = security_audit
 
     async def execute(
         self,
@@ -64,5 +65,12 @@ class LogoutUseCase:
             await self._auth_sessions.update(
                 session,
             )
+            if self._audit is not None:
+                await self._audit.record(
+                    "auth.session.logout",
+                    actor_user_id=session.user_id,
+                    target_type="auth_session",
+                    target_id=session.id,
+                )
 
             await self._uow.commit()

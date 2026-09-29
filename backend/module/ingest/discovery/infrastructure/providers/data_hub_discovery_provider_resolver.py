@@ -1,7 +1,7 @@
 import logging
 
-from module.data_platform.data_hub.sharepoint.composition import (
-    DataHubProviderResolver,
+from module.data_platform.data_hub.composition import (
+    DataHubProviderRegistry,
 )
 from module.data_platform.data_hub.shared.domain.value_objects.source_reference import (
     SourceReference as DataHubSourceReference,
@@ -26,7 +26,7 @@ class DataHubDiscoveryProviderResolver(
 
     def __init__(
         self,
-        data_hub_provider_resolver: DataHubProviderResolver,
+        data_hub_provider_resolver: DataHubProviderRegistry,
     ):
         self._data_hub_provider_resolver = (
             data_hub_provider_resolver

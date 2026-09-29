@@ -1,12 +1,12 @@
-from app.domain.entities.verification_token import (
+from module.auth.domain.entities.verification_token import (
     VerificationToken,
 )
 
-from app.domain.enums.token_purpose import (
+from module.auth.domain.enums.token_purpose import (
     TokenPurpose,
 )
 
-from app.infrastructure.persistence.models.verification_token_model import (
+from module.auth.infrastructure.persistence.models.verification_token_model import (
     VerificationTokenModel,
 )
 

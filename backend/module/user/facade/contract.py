@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from datetime import datetime
 from uuid import UUID
 
 from .dto import UserDTO
@@ -41,5 +42,14 @@ class UserModuleFacade(
     async def mark_email_verified(
         self,
         user_id: UUID,
+        verified_at: datetime,
+    ) -> None:
+        pass
+
+    @abstractmethod
+    async def activate_external_user(
+        self,
+        user_id: UUID,
+        email_verified_at: datetime | None,
     ) -> None:
         pass

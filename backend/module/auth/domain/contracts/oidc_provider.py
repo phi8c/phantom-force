@@ -18,6 +18,7 @@ class OidcProvider(
     @abstractmethod
     def build_authorization_url(
         self,
+        expected_tenant_id: str,
         state: str,
         nonce: str,
         code_challenge: str,
@@ -27,6 +28,7 @@ class OidcProvider(
     @abstractmethod
     async def exchange_code_and_verify(
         self,
+        expected_tenant_id: str,
         code: str,
         code_verifier: str,
         expected_nonce: str,

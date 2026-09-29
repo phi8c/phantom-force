@@ -1,8 +1,8 @@
-from app.domain.entities.mfa_recovery_code import (
+from module.auth.domain.entities.mfa_recovery_code import (
     MfaRecoveryCode,
 )
 
-from app.infrastructure.persistence.models.mfa_recovery_code_model import (
+from module.auth.infrastructure.persistence.models.mfa_recovery_code_model import (
     MfaRecoveryCodeModel,
 )
 

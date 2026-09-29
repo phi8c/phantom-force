@@ -42,3 +42,10 @@ class VerificationTokenRepository(
         used_at: datetime,
     ) -> None:
         pass
+
+    @abstractmethod
+    async def get_by_token_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> VerificationToken | None:
+        pass

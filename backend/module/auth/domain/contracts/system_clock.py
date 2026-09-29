@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from module.auth.domain.services.clock import (
+from module.auth.domain.contracts.clock import (
     Clock,
 )
 
@@ -19,4 +19,4 @@ class SystemClock(
         self,
     ) -> datetime:
 
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)

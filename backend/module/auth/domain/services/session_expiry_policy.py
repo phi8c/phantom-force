@@ -3,10 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timedelta
 
-IDLE_TIMEOUT_MINUTES = 30
-ABSOLUTE_TIMEOUT_HOURS = 12
-
-
 class SessionExpiryPolicy:
     """
     2 lop timeout doc lap: idle (khong hoat dong) va absolute (tuyet doi
@@ -16,17 +12,27 @@ class SessionExpiryPolicy:
     def compute_idle_expiry(
         self,
         now: datetime,
+        timeout_minutes: int,
     ) -> datetime:
 
         return now + timedelta(
-            minutes=IDLE_TIMEOUT_MINUTES,
+            minutes=timeout_minutes,
         )
 
     def compute_absolute_expiry(
         self,
         now: datetime,
+        timeout_minutes: int,
     ) -> datetime:
 
         return now + timedelta(
-            hours=ABSOLUTE_TIMEOUT_HOURS,
+            minutes=timeout_minutes,
         )
+
+    def refresh_idle_expiry(
+        self,
+        now: datetime,
+        previous_last_seen_at: datetime,
+        previous_idle_expires_at: datetime,
+    ) -> datetime:
+        return now + (previous_idle_expires_at - previous_last_seen_at)

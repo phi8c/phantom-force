@@ -60,11 +60,49 @@ class RabbitMQReceivedMessage(ReceivedMessage):
 
 
 class RabbitMQMessageConsumer(MessageConsumer):
-    EMPTY_QUEUE_POLL_INTERVAL = 0.1
-
     def __init__(self, queue: Any, *, queue_name: str | None = None) -> None:
         self._queue = queue
         self._queue_name = queue_name
+        self._messages: asyncio.Queue[Any] = asyncio.Queue()
+        self._start_lock = asyncio.Lock()
+        self._consumer_tag: str | None = None
+        self._closed = False
+
+    async def start(self) -> None:
+        if self._consumer_tag is not None:
+            return
+        async with self._start_lock:
+            if self._consumer_tag is not None:
+                return
+            if self._closed:
+                raise RuntimeError("RabbitMQ consumer is closed.")
+            self._consumer_tag = await self._queue.consume(
+                self._on_message,
+                no_ack=False,
+            )
+            logger.info(
+                "rabbitmq consumer_registered queue=%s consumer_tag=%s",
+                self._queue_name,
+                self._consumer_tag,
+            )
+
+    async def close(self) -> None:
+        async with self._start_lock:
+            if self._closed:
+                return
+            self._closed = True
+            consumer_tag = self._consumer_tag
+            self._consumer_tag = None
+
+            if consumer_tag is None or not self._channel_is_usable():
+                return
+
+            await self._queue.cancel(consumer_tag)
+            logger.info(
+                "rabbitmq consumer_cancelled queue=%s consumer_tag=%s",
+                self._queue_name,
+                consumer_tag,
+            )
 
     async def receive(
         self,
@@ -76,6 +114,10 @@ class RabbitMQMessageConsumer(MessageConsumer):
             raise ValueError("max_messages must be greater than 0.")
         if wait_timeout < 0:
             raise ValueError("wait_timeout cannot be negative.")
+        if self._closed:
+            raise RuntimeError("RabbitMQ consumer is closed.")
+
+        await self.start()
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + wait_timeout
@@ -83,27 +125,35 @@ class RabbitMQMessageConsumer(MessageConsumer):
 
         while len(received) < max_messages:
             remaining = max(0.0, deadline - loop.time())
-            if received and remaining <= 0:
-                break
-            raw_message = await self._queue.get(
-                no_ack=False,
-                fail=False,
-                timeout=remaining,
-            )
-            if raw_message is None:
-                remaining = max(0.0, deadline - loop.time())
+            try:
                 if remaining <= 0:
-                    break
-                await asyncio.sleep(
-                    min(self.EMPTY_QUEUE_POLL_INTERVAL, remaining)
-                )
-                continue
+                    raw_message = self._messages.get_nowait()
+                else:
+                    raw_message = await asyncio.wait_for(
+                        self._messages.get(),
+                        timeout=remaining,
+                    )
+            except (asyncio.TimeoutError, asyncio.QueueEmpty):
+                break
+
             received.append(
                 RabbitMQReceivedMessage(
                     raw_message,
                     queue_name=self._queue_name,
                 )
             )
+
+            while len(received) < max_messages:
+                try:
+                    raw_message = self._messages.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                received.append(
+                    RabbitMQReceivedMessage(
+                        raw_message,
+                        queue_name=self._queue_name,
+                    )
+                )
 
         if received:
             logger.info(
@@ -112,3 +162,10 @@ class RabbitMQMessageConsumer(MessageConsumer):
                 len(received),
             )
         return received
+
+    async def _on_message(self, raw_message: Any) -> None:
+        await self._messages.put(raw_message)
+
+    def _channel_is_usable(self) -> bool:
+        channel = getattr(self._queue, "channel", None)
+        return channel is None or not getattr(channel, "is_closed", False)

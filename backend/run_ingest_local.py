@@ -2,6 +2,10 @@ import asyncio
 import logging
 
 from bootstrap.queues import create_ingest_messaging
+from bootstrap.data_hub import (
+    create_data_hub_provider_resolver,
+    create_download_document_source,
+)
 from bootstrap.workers import (
     create_chunking_worker,
     create_classification_worker,
@@ -12,12 +16,9 @@ from bootstrap.workers import (
 )
 from run_worker import (
     configure_worker_logging,
-    create_data_hub_provider_resolver,
-    create_download_document_source,
     create_download_object_storage,
     create_extraction_object_storage,
     create_file_storage,
-    create_graph_token_provider,
     get_storage_provider_id,
 )
 
@@ -39,7 +40,6 @@ async def run() -> None:
     file_storage = create_file_storage()
     storage_provider_id = await get_storage_provider_id()
 
-    token_provider = create_graph_token_provider()
     data_hub_provider_resolver = (
         create_data_hub_provider_resolver()
     )
@@ -56,9 +56,7 @@ async def run() -> None:
             consumers=consumers,
             dispatchers=dispatchers,
             document_source=(
-                create_download_document_source(
-                    token_provider,
-                )
+                create_download_document_source()
             ),
             object_storage=(
                 create_download_object_storage(

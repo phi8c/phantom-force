@@ -94,6 +94,7 @@ class AuthSessionRepositoryImpl(
 
         model.last_seen_at = entity.last_seen_at
         model.idle_expires_at = entity.idle_expires_at
+        model.mfa_verified_at = entity.mfa_verified_at
         model.revoked_at = entity.revoked_at
         model.revoked_reason = entity.revoked_reason
 

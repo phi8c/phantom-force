@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from module.ingest.discovery.application.dtos.requests.discover_batch_request import (
@@ -45,6 +46,13 @@ from module.ingest.discovery.domain.enums.ingestion_document_status import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _mapping_keys(value) -> list[str]:
+    return sorted(str(key) for key in value) if isinstance(value, dict) else []
+
+
 class DiscoverBatchUseCase:
 
     def __init__(
@@ -82,6 +90,12 @@ class DiscoverBatchUseCase:
         request: DiscoverBatchRequest,
     ) -> DiscoverBatchResponse:
 
+        logger.info(
+            "discovery execute job_id=%s batch_size=%s",
+            request.ingestion_job_id,
+            request.batch_size,
+        )
+
         if request.batch_size <= 0:
             raise ValueError(
                 "batch_size must be greater than 0"
@@ -92,6 +106,15 @@ class DiscoverBatchUseCase:
             .get_for_ingestion_job(
                 request.ingestion_job_id,
             )
+        )
+        logger.info(
+            "discovery source_lookup_result job_id=%s source_found=%s provider=%s data_hub_id=%s config_keys=%s scope_keys=%s",
+            request.ingestion_job_id,
+            source_config is not None,
+            getattr(source_config, "provider", None),
+            getattr(source_config, "data_hub_id", None),
+            _mapping_keys(getattr(source_config, "configuration", None)),
+            _mapping_keys(getattr(source_config, "scope_data", None)),
         )
 
         if source_config is None:
@@ -105,6 +128,13 @@ class DiscoverBatchUseCase:
             .get_by_ingestion_job_id(
                 request.ingestion_job_id,
             )
+        )
+        logger.info(
+            "discovery state_lookup_result job_id=%s state_found=%s completed=%s has_cursor=%s",
+            request.ingestion_job_id,
+            discovery_state is not None,
+            getattr(discovery_state, "completed", None),
+            bool(getattr(discovery_state, "cursor", None)),
         )
 
         if (
@@ -151,11 +181,24 @@ class DiscoverBatchUseCase:
                 ),
             )
         )
+        logger.info(
+            "discovery provider_result job_id=%s provider=%s implementation=%s",
+            request.ingestion_job_id,
+            source_config.provider,
+            type(provider).__name__,
+        )
 
         page = await provider.discover(
             source=source,
             cursor=cursor,
             limit=request.batch_size,
+        )
+        logger.info(
+            "discovery page_result job_id=%s items=%s has_more=%s has_next_cursor=%s",
+            request.ingestion_job_id,
+            len(page.items),
+            page.has_more,
+            page.next_cursor is not None,
         )
 
         discovered_files = page.items
@@ -198,6 +241,12 @@ class DiscoverBatchUseCase:
                     external_file_ids
                 ),
             )
+        )
+        logger.info(
+            "discovery documents_lookup_result job_id=%s requested=%s existing=%s",
+            request.ingestion_job_id,
+            len(external_file_ids),
+            len(existing_documents),
         )
 
         result_items: list[
@@ -345,7 +394,7 @@ class DiscoverBatchUseCase:
                 )
             )
 
-        await (
+        batch_id = await (
             self.orchestration_progress_service
             .create_discovery_batch(
                 ingestion_job_id=(
@@ -353,6 +402,12 @@ class DiscoverBatchUseCase:
                 ),
                 document_ids=document_ids,
             )
+        )
+        logger.info(
+            "discovery orchestration_result job_id=%s batch_id=%s documents=%s",
+            request.ingestion_job_id,
+            batch_id,
+            len(document_ids),
         )
 
         await (
@@ -370,8 +425,18 @@ class DiscoverBatchUseCase:
         )
 
         await self.uow.commit()
+        logger.info(
+            "discovery commit_result job_id=%s items=%s has_more=%s",
+            request.ingestion_job_id,
+            len(result_items),
+            page.has_more,
+        )
 
         await self.download_task_scheduler.dispatch_job(
+            request.ingestion_job_id,
+        )
+        logger.info(
+            "discovery download_dispatch_result job_id=%s dispatched=true",
             request.ingestion_job_id,
         )
 

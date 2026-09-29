@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from uuid import UUID
-
-from app.domain.unit_of_work.unit_of_work import (
+from module.auth.domain.contracts.unit_of_work import (
     UnitOfWork,
 )
 
@@ -125,10 +122,13 @@ class ResolveCurrentUserUseCase:
         if seconds_since_last_seen > LAST_SEEN_UPDATE_THRESHOLD_SECONDS:
 
             async with self._uow:
+                previous_last_seen_at = session.last_seen_at
                 session.last_seen_at = now
                 session.idle_expires_at = (
-                    self._session_expiry_policy.compute_idle_expiry(
+                    self._session_expiry_policy.refresh_idle_expiry(
                         now,
+                        previous_last_seen_at,
+                        session.idle_expires_at,
                     )
                 )
                 await self._auth_sessions.update(
@@ -140,4 +140,9 @@ class ResolveCurrentUserUseCase:
             user_id=user_dto.id,
             email=user_dto.email,
             session_id=session.id,
+            auth_method=session.auth_method,
+            context_type=session.context_type,
+            knowledge_space_id=session.knowledge_space_id,
+            authenticated_at=session.authenticated_at,
+            mfa_verified_at=session.mfa_verified_at,
         )

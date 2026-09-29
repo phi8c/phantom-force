@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-@dataclass
-class ResolveCurrentUserRequest:
 
+@dataclass(frozen=True)
+class ResolveCurrentUserRequest:
     raw_session_token: str

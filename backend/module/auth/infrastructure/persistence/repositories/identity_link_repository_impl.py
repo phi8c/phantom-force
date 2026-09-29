@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.auth.domain.contracts.identity_link_repository import (
@@ -16,6 +17,7 @@ from module.auth.domain.entities.identity_link import (
 from module.auth.domain.enums.auth_provider import (
     AuthProvider,
 )
+from module.auth.domain.exception.exceptions import ExternalIdentityConflictError
 
 from module.auth.infrastructure.persistence.mappers.identity_link_mapper import (
     IdentityLinkMapper,
@@ -96,9 +98,24 @@ class IdentityLinkRepositoryImpl(
             entity,
         )
 
-        model = await super().add(
-            model,
-        )
+        try:
+            model = await super().add(
+                model,
+            )
+        except IntegrityError as exc:
+            constraint_name = getattr(
+                getattr(exc.orig, "diag", None),
+                "constraint_name",
+                None,
+            )
+            if constraint_name not in {
+                "identity_links_provider_external_sub_key",
+                "uq_identity_links_provider_sub",
+            }:
+                raise
+            raise ExternalIdentityConflictError(
+                "External identity is already linked"
+            ) from exc
 
         return IdentityLinkMapper.to_domain(
             model,

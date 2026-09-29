@@ -1,6 +1,7 @@
 import os
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.ingest import router as ingest_router
@@ -41,10 +42,26 @@ from module.data_platform.data_hub.presentation.http.router import (
 from module.chats.chat.presentation.router import (
     router as chat_router,
 )
+from module.auth.composition import create_auth_runtime
+from module.auth.presentation.controller.auth_controller import router as auth_router
+from module.auth.facade import require_management_user
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    auth_runtime = create_auth_runtime()
+    app.state.auth_mfa_challenge_store = auth_runtime.mfa_challenge_store
+    app.state.auth_oidc_transaction_store = auth_runtime.oidc_transaction_store
+    try:
+        yield
+    finally:
+        del app.state.auth_mfa_challenge_store
+        del app.state.auth_oidc_transaction_store
 
 
 app = FastAPI(
     title="Phantom Force",
+    lifespan=lifespan,
 )
 
 cors_origins = [
@@ -68,33 +85,45 @@ app.add_middleware(
 
 app.include_router(
     ingest_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     ingest_orchestration_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     ingest_master_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     enterprise_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     data_hub_provider_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     data_hub_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     knowledge_space_data_hub_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     embedding_model_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     knowledge_space_router,
+    dependencies=[Depends(require_management_user)],
 )
 app.include_router(
     chat_router,
+)
+app.include_router(
+    auth_router,
 )
 
 

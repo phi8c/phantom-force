@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from uuid import uuid4
 
-from app.domain.unit_of_work.unit_of_work import (
+from module.auth.domain.contracts.unit_of_work import (
     UnitOfWork,
 )
 
@@ -21,6 +20,9 @@ from module.auth.domain.contracts.token_service import (
 )
 from module.auth.domain.contracts.verification_token_repository import (
     VerificationTokenRepository,
+)
+from module.auth.domain.contracts.verification_email_sender import (
+    VerificationEmailSender,
 )
 from module.auth.domain.entities.credential import (
     Credential,
@@ -44,27 +46,14 @@ from module.auth.domain.services.verification_token_policy import (
 from module.user.facade.contract import (
     UserModuleFacade,
 )
-
-
-@dataclass
-class RegisterLocalUserRequest:
-
-    email: str
-
-    password: str
-
-
-@dataclass
-class RegisterLocalUserResult:
-    """
-    1 object duy nhat, ten field ro nghia - thay the cho tuple mo ho.
-    raw_verification_token = None khi email da ton tai tu truoc (khong tao
-    gi ca, chi tra ket qua giong het truong hop thanh cong).
-    """
-
-    message: str
-
-    raw_verification_token: str | None
+from module.user.facade.exceptions import UserAlreadyExistsError
+from module.auth.application.dto.request.register_local_user_request import (
+    RegisterLocalUserRequest,
+)
+from module.auth.application.dto.response.register_local_user_response import (
+    RegisterLocalUserResult,
+)
+from module.auth.application.services.security_audit_service import SecurityAuditService
 
 
 class RegisterLocalUserUseCase:
@@ -80,6 +69,8 @@ class RegisterLocalUserUseCase:
         password_policy: PasswordPolicy,
         verification_token_policy: VerificationTokenPolicy,
         token_service: TokenService,
+        verification_email_sender: VerificationEmailSender,
+        security_audit: SecurityAuditService | None = None,
     ):
         self._uow = uow
         self._clock = clock
@@ -90,6 +81,8 @@ class RegisterLocalUserUseCase:
         self._password_policy = password_policy
         self._verification_token_policy = verification_token_policy
         self._token_service = token_service
+        self._verification_email_sender = verification_email_sender
+        self._audit = security_audit
 
     async def execute(
         self,
@@ -105,7 +98,6 @@ class RegisterLocalUserUseCase:
 
         generic_result = RegisterLocalUserResult(
             message="Neu email hop le, ban se nhan duoc email xac thuc.",
-            raw_verification_token=None,
         )
 
         existing = await self._user_facade.get_user_by_email(
@@ -119,9 +111,13 @@ class RegisterLocalUserUseCase:
 
         async with self._uow:
 
-            user_dto = await self._user_facade.create_user(
-                request.email,
-            )
+            try:
+                user_dto = await self._user_facade.create_user(
+                    request.email,
+                )
+            except UserAlreadyExistsError:
+                await self._uow.rollback()
+                return generic_result
 
             now = self._clock.now()
 
@@ -157,9 +153,18 @@ class RegisterLocalUserUseCase:
                 verification_token,
             )
 
+            await self._verification_email_sender.send_verification_email(
+                recipient=user_dto.email,
+                raw_token=raw_token,
+            )
+            if self._audit is not None:
+                await self._audit.record(
+                    "auth.registration.created",
+                    actor_user_id=user_dto.id,
+                    target_type="user",
+                    target_id=user_dto.id,
+                )
+
             await self._uow.commit()
 
-        return RegisterLocalUserResult(
-            message=generic_result.message,
-            raw_verification_token=raw_token,
-        )
+        return generic_result

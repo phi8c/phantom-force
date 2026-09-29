@@ -33,6 +33,8 @@ class DataHubDocumentSource(
     async def open(
         self,
         document_id: UUID,
+        *,
+        ingestion_job_id: UUID,
     ) -> DownloadSource:
 
         document = (

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 import httpx
 
 from .contract import UserModuleFacade
 from .dto import UserDTO
+from .exceptions import UserAlreadyExistsError
 
 
 class HttpUserFacade(
@@ -89,6 +91,9 @@ class HttpUserFacade(
             headers=self._headers(),
         )
 
+        if response.status_code == 409:
+            raise UserAlreadyExistsError()
+
         response.raise_for_status()
 
         return UserDTO(
@@ -98,11 +103,31 @@ class HttpUserFacade(
     async def mark_email_verified(
         self,
         user_id: UUID,
+        verified_at: datetime,
     ) -> None:
 
         response = await self._client.post(
             f"{self._base_url}/internal/users/{user_id}/verify-email",
+            json={"verified_at": verified_at.isoformat()},
             headers=self._headers(),
         )
 
+        response.raise_for_status()
+
+    async def activate_external_user(
+        self,
+        user_id: UUID,
+        email_verified_at: datetime | None,
+    ) -> None:
+        response = await self._client.post(
+            f"{self._base_url}/internal/users/{user_id}/activate-external",
+            json={
+                "email_verified_at": (
+                    email_verified_at.isoformat()
+                    if email_verified_at is not None
+                    else None
+                )
+            },
+            headers=self._headers(),
+        )
         response.raise_for_status()

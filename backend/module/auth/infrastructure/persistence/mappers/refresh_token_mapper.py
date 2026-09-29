@@ -1,8 +1,8 @@
-from app.domain.entities.refresh_token import (
+from module.auth.domain.entities.refresh_token import (
     RefreshToken,
 )
 
-from app.infrastructure.persistence.models.refresh_token_model import (
+from module.auth.infrastructure.persistence.models.refresh_token_model import (
     RefreshTokenModel,
 )
 

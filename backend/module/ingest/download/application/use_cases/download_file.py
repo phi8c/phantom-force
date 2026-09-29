@@ -99,6 +99,7 @@ class DownloadFileUseCase:
 
             source = await self.document_source.open(
                 task.document_id,
+                ingestion_job_id=task.ingestion_job_id,
             )
             print(
                 "\n===== DOWNLOAD SOURCE OPENED START =====",

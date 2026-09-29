@@ -1,19 +1,21 @@
-from __future__ import annotations
+from datetime import datetime, timedelta
 
-MFA_REQUIRED_PERMISSION_CODE = "security:mfa_required"
+
+MFA_CHALLENGE_TTL = timedelta(minutes=5)
 
 
 class MfaPolicy:
-    """
-    MFA bat buoc theo role duoc quyet dinh boi 1 marker permission (khong
-    can cot/bang rieng) - role nao duoc gan permission nay thi moi user
-    thuoc role do bi bat buoc MFA. Danh sach permission cua user duoc
-    application layer truyen vao tu authz module (qua facade).
-    """
+    @staticmethod
+    def is_required(policy_requires_mfa: bool, user_has_mfa: bool) -> bool:
+        return policy_requires_mfa or user_has_mfa
 
-    def is_mfa_required(
-        self,
-        user_permission_codes: set[str],
+    @staticmethod
+    def enrollment_is_required(
+        policy_requires_mfa: bool,
+        user_has_mfa: bool,
     ) -> bool:
+        return policy_requires_mfa and not user_has_mfa
 
-        return MFA_REQUIRED_PERMISSION_CODE in user_permission_codes
+    @staticmethod
+    def challenge_expires_at(now: datetime) -> datetime:
+        return now + MFA_CHALLENGE_TTL

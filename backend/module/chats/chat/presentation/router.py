@@ -3,7 +3,7 @@ import logging
 from time import perf_counter
 from shared.logging.chat_diagnostics import print_chat_trace
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from bootstrap.database import get_session
@@ -32,6 +32,11 @@ from module.launch_on_railway.knowledge_selection.composition import (
 )
 from module.launch_on_railway.navigation.composition import (
     create_navigation_service,
+)
+from module.auth.facade import (
+    enforce_knowledge_space_access,
+    get_authentication_context_guard,
+    get_current_user,
 )
 
 
@@ -63,7 +68,15 @@ class ChatHttpResponse(BaseModel):
 )
 async def chat(
     request: ChatHttpRequest,
+    current_user=Depends(get_current_user),
+    context_guard=Depends(get_authentication_context_guard),
 ) -> ChatHttpResponse:
+
+    enforce_knowledge_space_access(
+        current_user,
+        request.knowledge_space_id,
+        context_guard,
+    )
 
     started_at = perf_counter()
     logger.info(

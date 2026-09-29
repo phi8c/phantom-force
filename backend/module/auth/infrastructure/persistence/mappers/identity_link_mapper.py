@@ -1,12 +1,12 @@
-from app.domain.entities.identity_link import (
+from module.auth.domain.entities.identity_link import (
     IdentityLink,
 )
 
-from app.domain.enums.auth_provider import (
+from module.auth.domain.enums.auth_provider import (
     AuthProvider,
 )
 
-from app.infrastructure.persistence.models.identity_link_model import (
+from module.auth.infrastructure.persistence.models.identity_link_model import (
     IdentityLinkModel,
 )
 

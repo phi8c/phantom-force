@@ -1,8 +1,8 @@
-from app.domain.entities.password_history import (
+from module.auth.domain.entities.password_history import (
     PasswordHistory,
 )
 
-from app.infrastructure.persistence.models.password_history_model import (
+from module.auth.infrastructure.persistence.models.password_history_model import (
     PasswordHistoryModel,
 )
 

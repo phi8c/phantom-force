@@ -30,6 +30,13 @@ class IngestionJobQueueRoutingResolver(QueueRoutingResolver):
         job = await self._ingestion_repository.get_job_by_id(
             ingestion_job_id
         )
+        logger.info(
+            "ingest queue job_lookup_result job_id=%s job_found=%s knowledge_space_id=%s status=%s",
+            ingestion_job_id,
+            job is not None,
+            getattr(job, "knowledge_space_id", None),
+            getattr(job, "status", None),
+        )
         if job is None:
             raise LookupError(
                 f"Ingestion job '{ingestion_job_id}' was not found."

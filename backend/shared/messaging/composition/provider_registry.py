@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+import logging
 from typing import Protocol
 
 from .models import IngestDispatchers, IngestProducer
+
+
+logger = logging.getLogger(__name__)
 
 
 class UnsupportedQueueProviderError(LookupError):
@@ -36,11 +40,16 @@ class MessagingProviderRegistry:
     async def get(self, provider_code: str) -> IngestDispatchers:
         normalized_code = self.normalize_code(provider_code)
         try:
-            return self._providers[normalized_code]
+            dispatchers = self._providers[normalized_code]
         except KeyError as exc:
             raise UnsupportedQueueProviderError(
                 f"Unsupported queue provider '{normalized_code}'."
             ) from exc
+        logger.info(
+            "messaging provider_registry_result provider=%s mode=eager found=true",
+            normalized_code,
+        )
+        return dispatchers
 
     @staticmethod
     def normalize_code(provider_code: str) -> str:
@@ -83,22 +92,38 @@ class LazyMessagingProviderRegistry:
 
         provider = self._providers.get(code)
         if provider is not None:
+            logger.info(
+                "messaging provider_registry_result provider=%s mode=lazy cached=true",
+                code,
+            )
             return provider.dispatchers
 
         async with self._locks[code]:
             provider = self._providers.get(code)
             if provider is not None:
+                logger.info(
+                    "messaging provider_registry_result provider=%s mode=lazy cached=true",
+                    code,
+                )
                 return provider.dispatchers
             async with self._state_lock:
                 if self._closed:
                     raise RuntimeError("Messaging provider registry is closed.")
 
+            logger.info(
+                "messaging provider_create_call provider=%s",
+                code,
+            )
             provider = await factory()
             async with self._state_lock:
                 if self._closed:
                     await provider.close()
                     raise RuntimeError("Messaging provider registry is closed.")
                 self._providers[code] = provider
+            logger.info(
+                "messaging provider_create_result provider=%s created=true",
+                code,
+            )
             return provider.dispatchers
 
     async def close(self) -> None:

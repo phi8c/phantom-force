@@ -35,6 +35,15 @@ class KnowledgeSpaceQueueProviderResolver(QueueProviderResolver):
         mapping = await self._repository.get_default_for_knowledge_space(
             knowledge_space_id
         )
+        logger.info(
+            "queue provider lookup_result knowledge_space_id=%s mapping_found=%s mapping_enabled=%s provider_found=%s provider_code=%s provider_enabled=%s",
+            knowledge_space_id,
+            mapping is not None,
+            getattr(mapping, "enabled", None),
+            getattr(mapping, "provider", None) is not None,
+            getattr(getattr(mapping, "provider", None), "code", None),
+            getattr(getattr(mapping, "provider", None), "enabled", None),
+        )
         if mapping is None:
             logger.info(
                 "queue provider fallback knowledge_space_id=%s queue_provider=%s",

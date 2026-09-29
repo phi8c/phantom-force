@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 
-from app.domain.unit_of_work.unit_of_work import (
+from module.auth.domain.contracts.unit_of_work import (
     UnitOfWork,
 )
 
@@ -24,8 +26,13 @@ from module.auth.domain.contracts.token_service import (
     TokenService,
 )
 from module.auth.domain.exception.exceptions import (
+    InvalidAuthenticationContextError,
+    KnowledgeSpaceContextMismatchError,
     SessionExpiredError,
     SessionInvalidError,
+)
+from module.auth.application.services.authentication_context_guard import (
+    AuthenticationContextGuard,
 )
 from module.auth.domain.services.session_expiry_policy import (
     SessionExpiryPolicy,
@@ -37,6 +44,7 @@ from module.user.facade.contract import (
 
 from .providers import (
     get_auth_session_repository,
+    get_authentication_context_guard,
     get_clock,
     get_session_expiry_policy,
     get_token_service,
@@ -109,4 +117,41 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session invalid or expired",
+        )
+
+
+def require_management_user(
+    current_user: ResolveCurrentUserResult = Depends(get_current_user),
+    guard: AuthenticationContextGuard = Depends(get_authentication_context_guard),
+) -> ResolveCurrentUserResult:
+    try:
+        guard.require_management(current_user)
+    except InvalidAuthenticationContextError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Management authentication context is required",
+        )
+    return current_user
+
+
+def require_knowledge_space_user(
+    knowledge_space_id: UUID,
+    current_user: ResolveCurrentUserResult = Depends(get_current_user),
+    guard: AuthenticationContextGuard = Depends(get_authentication_context_guard),
+) -> ResolveCurrentUserResult:
+    enforce_knowledge_space_access(current_user, knowledge_space_id, guard)
+    return current_user
+
+
+def enforce_knowledge_space_access(
+    current_user: ResolveCurrentUserResult,
+    knowledge_space_id: UUID,
+    guard: AuthenticationContextGuard,
+) -> None:
+    try:
+        guard.require_knowledge_space(current_user, knowledge_space_id)
+    except (InvalidAuthenticationContextError, KnowledgeSpaceContextMismatchError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Knowledge Space authentication context is required",
         )

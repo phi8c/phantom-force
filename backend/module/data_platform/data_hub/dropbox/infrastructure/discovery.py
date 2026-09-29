@@ -79,6 +79,12 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
                 break
 
             if not started:
+                logger.info(
+                    "dropbox list_folder_call source_id=%s root_index=%s path=%s",
+                    source.identifier,
+                    root_index,
+                    source_paths[root_index],
+                )
                 page = await self._client.list_folder(
                     source_paths[root_index],
                     recursive=True,
@@ -87,6 +93,11 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
             elif sdk_has_more:
                 if not sdk_cursor:
                     raise RuntimeError("Dropbox returned has_more without a cursor.")
+                logger.info(
+                    "dropbox list_folder_continue_call source_id=%s root_index=%s",
+                    source.identifier,
+                    root_index,
+                )
                 page = await self._client.list_folder_continue(sdk_cursor)
             else:
                 root_index += 1
@@ -94,6 +105,16 @@ class DropboxDiscoveryProvider(DiscoveryProvider):
                 sdk_has_more = False
                 started = False
                 continue
+
+            logger.info(
+                "dropbox page_result source_id=%s root_index=%s entries=%s files=%s has_more=%s has_cursor=%s",
+                source.identifier,
+                root_index,
+                len(page.entries),
+                sum(1 for entry in page.entries if entry.kind == "file"),
+                page.has_more,
+                bool(page.cursor),
+            )
 
             pending.extend(
                 self._entry_to_record(entry)
