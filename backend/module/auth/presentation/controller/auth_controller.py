@@ -146,6 +146,18 @@ async def register_local_user(
     "/verify-email",
     response_model=VerifyEmailResponseSchema,
 )
+async def verify_email(
+    body: VerifyEmailSchema,
+    use_case: VerifyEmailUseCase = Depends(get_verify_email_use_case),
+) -> VerifyEmailResponseSchema:
+    try:
+        result = await use_case.execute(VerifyEmailRequest(raw_token=body.token))
+    except (InvalidVerificationTokenError, ExpiredVerificationTokenError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token is invalid or expired",
+        )
+    return VerifyEmailResponseSchema(message=result.message)
 
 
 @router.get(
@@ -174,18 +186,6 @@ async def get_knowledge_space_auth_requirement(
         auth_method=result.auth_method,
         require_mfa=result.require_mfa,
     )
-async def verify_email(
-    body: VerifyEmailSchema,
-    use_case: VerifyEmailUseCase = Depends(get_verify_email_use_case),
-) -> VerifyEmailResponseSchema:
-    try:
-        result = await use_case.execute(VerifyEmailRequest(raw_token=body.token))
-    except (InvalidVerificationTokenError, ExpiredVerificationTokenError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification token is invalid or expired",
-        )
-    return VerifyEmailResponseSchema(message=result.message)
 
 
 @router.post(

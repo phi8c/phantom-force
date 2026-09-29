@@ -170,6 +170,12 @@ class AuthenticationContextGuardTests(unittest.TestCase):
                 uuid4(),
             )
 
+    def test_session_for_same_knowledge_space_is_accepted(self) -> None:
+        self.guard.require_knowledge_space(
+            self._current_user(self.knowledge_space_id),
+            self.knowledge_space_id,
+        )
+
     @staticmethod
     def _current_user(knowledge_space_id) -> ResolveCurrentUserResult:
         return ResolveCurrentUserResult(

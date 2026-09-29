@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from pydantic import EmailStr
 from pydantic import Field
 from datetime import datetime
 from uuid import UUID
@@ -12,10 +11,13 @@ from module.auth.domain.enums.authentication_context_type import (
 )
 
 
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
 class RegisterLocalUserSchema(
     BaseModel,
 ):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=320, pattern=EMAIL_PATTERN)
     password: str = Field(
         min_length=12,
     )
@@ -38,7 +40,7 @@ class VerifyEmailResponseSchema(BaseModel):
 class LocalLoginSchema(
     BaseModel,
 ):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=320, pattern=EMAIL_PATTERN)
     password: str
 
 

@@ -6,7 +6,7 @@ from shared.logging.chat_diagnostics import print_chat_trace
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from bootstrap.database import get_session
+from bootstrap.database import session_scope
 
 from module.chats.chat.application.dtos.request.chat_request import (
     ChatRequest,
@@ -86,7 +86,7 @@ async def chat(
     )
     print_chat_trace("REQUEST", request.model_dump(mode="json"))
 
-    async with get_session() as session:
+    async with session_scope() as session:
 
         # Shared dependencies
         prompt_provider = create_prompt_provider(

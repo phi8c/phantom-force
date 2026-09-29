@@ -183,6 +183,44 @@ class VerifyMfaTests(unittest.IsolatedAsyncioTestCase):
                 VerifyMfaRequest(challenge_id=challenge_id, code="123456")
             )
 
+    async def test_invalid_code_does_not_create_session(self) -> None:
+        user_id = uuid4()
+        store = InMemoryMfaChallengeStore()
+        challenge_id = await store.create_challenge(
+            MfaChallenge(
+                user_id=user_id,
+                auth_method=AuthProvider.LOCAL,
+                context_type=AuthenticationContextType.MANAGEMENT,
+                knowledge_space_id=None,
+                idle_timeout_minutes=15,
+                absolute_timeout_minutes=480,
+                ip_address=None,
+                user_agent=None,
+                device_fingerprint=None,
+                created_at=NOW,
+                expires_at=NOW + timedelta(minutes=5),
+            )
+        )
+        sessions = RecordingSessions()
+        use_case = VerifyMfaUseCase(
+            uow=FakeUnitOfWork(),
+            clock=FakeClock(),
+            user_facade=FakeUsers(user_id),
+            credential_repository=FakeCredentials(user_id),
+            auth_session_repository=sessions,
+            challenge_store=store,
+            mfa_provider=FakeMfaProvider(),
+            encryptor=FakeEncryptor(),
+            token_service=FakeTokens(),
+            session_expiry_policy=SessionExpiryPolicy(),
+        )
+
+        with self.assertRaises(InvalidMfaChallengeError):
+            await use_case.execute(
+                VerifyMfaRequest(challenge_id=challenge_id, code="000000")
+            )
+        self.assertIsNone(sessions.added)
+
 
 class TotpProviderTests(unittest.TestCase):
     def test_matches_rfc_6238_sha1_vector(self) -> None:

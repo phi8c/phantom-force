@@ -88,6 +88,13 @@ class FakeUsers:
 
 
 class SessionSecurityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_token_is_rejected(self) -> None:
+        session = self._session()
+        with self.assertRaises(SessionInvalidError):
+            await self._resolver(session, self._user(session.user_id)).execute(
+                ResolveCurrentUserRequest(raw_session_token="another-token")
+            )
+
     async def test_security_audit_records_structured_event_without_token(self) -> None:
         repository = RecordingAuditRepository()
         audit = SecurityAuditService(repository, FakeClock())

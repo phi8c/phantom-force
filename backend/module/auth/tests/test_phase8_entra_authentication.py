@@ -15,7 +15,10 @@ from module.auth.domain.enums.auth_provider import AuthProvider
 from module.auth.domain.enums.authentication_context_type import (
     AuthenticationContextType,
 )
-from module.auth.domain.exception.exceptions import ExplicitAccountLinkRequiredError
+from module.auth.domain.exception.exceptions import (
+    ExplicitAccountLinkRequiredError,
+    ExternalIdentityConflictError,
+)
 from module.auth.domain.services.mfa_policy import MfaPolicy
 from module.auth.domain.services.session_expiry_policy import SessionExpiryPolicy
 from module.auth.domain.value_objects.oidc_authorization_transaction import (
@@ -106,6 +109,12 @@ class FakeIdentityLinks:
     async def add(self, identity):
         self.identity = identity
         return identity
+
+
+class ConcurrentIdentityLinks(FakeIdentityLinks):
+    async def add(self, identity):
+        self.identity = identity
+        raise ExternalIdentityConflictError("concurrent identity insert")
 
 
 class FakeCredentials:
@@ -205,6 +214,22 @@ class EntraAuthenticationTests(unittest.IsolatedAsyncioTestCase):
                 user_agent=None,
                 device_fingerprint=None,
             )
+
+    async def test_concurrent_identity_insert_resolves_winning_link(self) -> None:
+        users = FakeUsers()
+        identities = ConcurrentIdentityLinks()
+        sessions = RecordingSessions()
+        service = self._service(users, identities, sessions)
+
+        result = await service.authenticate(
+            self._verified(),
+            ip_address=None,
+            user_agent=None,
+            device_fingerprint=None,
+        )
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(sessions.added.identity_link_id, identities.identity.id)
 
     async def test_knowledge_space_session_preserves_scope_and_identity(self) -> None:
         user = self._user()

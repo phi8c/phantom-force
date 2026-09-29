@@ -1,4 +1,6 @@
+import base64
 from datetime import datetime, timedelta, timezone
+import hashlib
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -122,6 +124,12 @@ class OidcAuthenticationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.start["expected_tenant_id"], "tenant-id")
         self.assertTrue(provider.start["nonce"])
         self.assertTrue(provider.start["code_challenge"])
+        expected_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(
+                completed.transaction.code_verifier.encode("ascii")
+            ).digest()
+        ).decode("ascii").rstrip("=")
+        self.assertEqual(provider.start["code_challenge"], expected_challenge)
         self.assertEqual(provider.exchange["expected_nonce"], provider.start["nonce"])
         self.assertEqual(provider.exchange["code_verifier"], completed.transaction.code_verifier)
         self.assertEqual(completed.transaction.knowledge_space_id, knowledge_space_id)
