@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     RABBITMQ_EMBED_QUEUE: str
     RABBITMQ_CLASSIFY_QUEUE: str
 
+    AUTH_EMAIL_PROVIDER: str = "smtp"
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None

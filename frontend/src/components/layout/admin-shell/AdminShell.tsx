@@ -6,15 +6,19 @@ import { AdminSidebar } from "./sidebar";
 
 interface AdminShellProps {
   children: ReactNode;
+  accountAction?: ReactNode;
 }
 
-export function AdminShell({ children }: AdminShellProps) {
+export function AdminShell({
+  children,
+  accountAction,
+}: AdminShellProps) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <AdminSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminHeader />
+        <AdminHeader accountAction={accountAction} />
 
         <AdminMain>{children}</AdminMain>
       </div>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -101,6 +103,8 @@ from ..schemas.auth_schema import (
     VerifyMfaSchema,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/auth",
     tags=[
@@ -133,6 +137,9 @@ async def register_local_user(
             detail=str(exc),
         )
     except VerificationDeliveryError:
+        logger.exception(
+            "Registration verification email delivery failed; transaction rolled back",
+        )
         return RegisterLocalUserResponseSchema(
             message="Neu email hop le, ban se nhan duoc email xac thuc.",
         )

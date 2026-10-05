@@ -9,7 +9,6 @@ import {
   KeyRound,
   LayoutDashboard,
   MessageSquare,
-  Network,
   Settings,
   ShieldCheck,
   Users,
@@ -105,7 +104,7 @@ export function getKnowledgeSpaceNavigation(
     },
     {
       title: "Chat",
-      href: `${basePath}/chat`,
+      href: `/chat/${encodeURIComponent(knowledgeSpaceId)}`,
       icon: MessageSquare,
     },
     {

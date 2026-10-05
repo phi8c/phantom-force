@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { AdminShell } from "@/components/layout/admin-shell/AdminShell";
+import { ManagementAuthBoundary } from "@/modules/auth";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -9,5 +9,9 @@ interface AdminLayoutProps {
 export default function AdminLayout({
   children,
 }: AdminLayoutProps) {
-  return <AdminShell>{children}</AdminShell>;
+  return (
+    <ManagementAuthBoundary>
+      {children}
+    </ManagementAuthBoundary>
+  );
 }

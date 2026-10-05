@@ -76,6 +76,9 @@ from module.auth.infrastructure.persistence.sqlalchemy_unit_of_work import (
 from module.auth.infrastructure.email.smtp_verification_email_sender import (
     SmtpVerificationEmailSender,
 )
+from module.auth.infrastructure.email.console_verification_email_sender import (
+    ConsoleVerificationEmailSender,
+)
 from module.auth.infrastructure.mfa.totp_provider import TotpMfaProvider
 from module.auth.infrastructure.oidc.microsoft_entra_oidc_provider import (
     MicrosoftEntraOidcProvider,
@@ -140,15 +143,7 @@ def create_auth_foundation(session: AsyncSession) -> AuthFoundation:
         identity_link_repository=IdentityLinkRepositoryImpl(session=session),
         credential_repository=CredentialRepositoryImpl(session=session),
         verification_token_repository=VerificationTokenRepositoryImpl(session=session),
-        verification_email_sender=SmtpVerificationEmailSender(
-            host=settings.SMTP_HOST,
-            port=settings.SMTP_PORT,
-            username=settings.SMTP_USERNAME,
-            password=settings.SMTP_PASSWORD,
-            sender=settings.SMTP_FROM_EMAIL,
-            verification_url=settings.AUTH_VERIFICATION_URL,
-            use_tls=settings.SMTP_USE_TLS,
-        ),
+        verification_email_sender=_create_verification_email_sender(),
         knowledge_space_auth_policy_repository=knowledge_space_policy_repository,
         management_auth_policy_repository=management_policy_repository,
         password_hasher=Argon2idPasswordHasher(),
@@ -177,6 +172,25 @@ def create_auth_foundation(session: AsyncSession) -> AuthFoundation:
             clock=clock,
         ),
     )
+
+
+def _create_verification_email_sender() -> VerificationEmailSender:
+    provider = settings.AUTH_EMAIL_PROVIDER.strip().lower()
+    if provider == "console":
+        return ConsoleVerificationEmailSender(
+            verification_url=settings.AUTH_VERIFICATION_URL,
+        )
+    if provider == "smtp":
+        return SmtpVerificationEmailSender(
+            host=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USERNAME,
+            password=settings.SMTP_PASSWORD,
+            sender=settings.SMTP_FROM_EMAIL,
+            verification_url=settings.AUTH_VERIFICATION_URL,
+            use_tls=settings.SMTP_USE_TLS,
+        )
+    raise ValueError(f"Unsupported AUTH_EMAIL_PROVIDER: {provider}")
 
 
 def create_local_authentication_service(

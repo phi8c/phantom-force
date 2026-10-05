@@ -21,9 +21,57 @@ from module.auth.infrastructure.persistence.mappers.knowledge_space_auth_policy_
 from module.auth.infrastructure.persistence.mappers.management_auth_policy_mapper import (
     ManagementAuthPolicyMapper,
 )
+from module.auth.infrastructure.persistence.models.auth_session_model import (
+    AuthSessionModel,
+)
+from module.auth.infrastructure.persistence.models.credential_model import CredentialModel
+from module.auth.infrastructure.persistence.models.knowledge_space_auth_policy_model import (
+    KnowledgeSpaceAuthPolicyModel,
+)
+from module.auth.infrastructure.persistence.models.management_auth_policy_model import (
+    ManagementAuthPolicyModel,
+)
 
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def test_auth_models_match_required_database_tables_and_columns() -> None:
+    expected = {
+        AuthSessionModel: {
+            "id", "user_id", "session_token_hash", "auth_method", "ip_address",
+            "user_agent", "device_fingerprint", "issued_at", "last_seen_at",
+            "idle_expires_at", "absolute_expires_at", "revoked_at",
+            "revoked_reason", "context_type", "knowledge_space_id",
+            "identity_link_id", "authenticated_at", "mfa_verified_at",
+        },
+        KnowledgeSpaceAuthPolicyModel: {
+            "id", "knowledge_space_id", "auth_method", "tenant_id", "require_mfa",
+            "idle_timeout_minutes", "absolute_timeout_minutes", "is_active",
+            "created_by", "created_at", "updated_at",
+        },
+        ManagementAuthPolicyModel: {
+            "id", "auth_method", "tenant_id", "require_mfa",
+            "idle_timeout_minutes", "absolute_timeout_minutes",
+            "reauthentication_minutes", "is_active", "created_at", "updated_at",
+        },
+        CredentialModel: {
+            "user_id", "password_hash", "password_algo", "password_changed_at",
+            "failed_attempts", "locked_until", "mfa_enabled",
+            "mfa_secret_encrypted", "created_at", "updated_at",
+        },
+    }
+    expected_tables = {
+        AuthSessionModel: "auth_sessions",
+        KnowledgeSpaceAuthPolicyModel: "knowledge_space_auth_policies",
+        ManagementAuthPolicyModel: "management_auth_policy",
+        CredentialModel: "credentials",
+    }
+
+    for model, expected_columns in expected.items():
+        assert model.__table__.schema == "iam"
+        assert model.__table__.name == expected_tables[model]
+        assert set(model.__table__.columns.keys()) == expected_columns
 
 
 def test_auth_session_mapper_round_trips_new_fields() -> None:

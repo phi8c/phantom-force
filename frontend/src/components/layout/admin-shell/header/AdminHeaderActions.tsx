@@ -1,8 +1,15 @@
+import type { ReactNode } from "react";
 import { Bell, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-export function AdminHeaderActions() {
+interface AdminHeaderActionsProps {
+  accountAction?: ReactNode;
+}
+
+export function AdminHeaderActions({
+  accountAction,
+}: AdminHeaderActionsProps) {
   return (
     <div className="flex items-center gap-2">
       <Button
@@ -21,8 +28,12 @@ export function AdminHeaderActions() {
         <Bell />
       </Button>
 
-      <div className="ml-2 flex size-8 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-        A
+      <div className="ml-2">
+        {accountAction ?? (
+          <div className="flex size-8 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+            A
+          </div>
+        )}
       </div>
     </div>
   );

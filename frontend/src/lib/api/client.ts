@@ -16,6 +16,7 @@ function resolveApiBaseUrl() {
 
 export const apiClient = axios.create({
   baseURL: resolveApiBaseUrl(),
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },

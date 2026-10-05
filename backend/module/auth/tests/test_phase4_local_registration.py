@@ -17,6 +17,9 @@ from module.auth.domain.exception.exceptions import (
 )
 from module.auth.domain.services.password_policy import PasswordPolicy
 from module.auth.domain.services.verification_token_policy import VerificationTokenPolicy
+from module.auth.infrastructure.email.console_verification_email_sender import (
+    ConsoleVerificationEmailSender,
+)
 from module.user.facade.dto import UserDTO
 
 
@@ -124,6 +127,23 @@ class RecordingEmailSender:
 
 
 class LocalRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_console_sender_logs_verification_link(self) -> None:
+        sender = ConsoleVerificationEmailSender(
+            verification_url="http://localhost:3000/verify-email",
+        )
+
+        with self.assertLogs(
+            "module.auth.infrastructure.email.console_verification_email_sender",
+            level="WARNING",
+        ) as captured:
+            await sender.send_verification_email(
+                "user@example.com",
+                "raw token",
+            )
+
+        self.assertIn("recipient=user@example.com", captured.output[0])
+        self.assertIn("token=raw+token", captured.output[0])
+
     async def test_register_stores_only_hash_and_dispatches_email(self) -> None:
         uow = FakeUnitOfWork()
         users = FakeUserFacade()
