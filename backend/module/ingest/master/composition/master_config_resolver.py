@@ -3,15 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from module.ingest.master.chunking_strategy.infrastructure.persistence.repositories.chunking_strategy_repository_impl import (
-    ChunkingStrategyRepositoryImpl,
-)
-from module.ingest.master.extraction_strategy.infrastructure.persistence.repositories.extraction_strategy_repository_impl import (
-    ExtractionStrategyRepositoryImpl,
-)
-from module.ingest.master.model_set.infrastructure.persistence.repositories.model_set_repository_impl import (
-    ModelSetRepositoryImpl,
-)
+from module.ingest.master.domain.contracts.master_config_lookup import MasterConfigLookup
+from module.ingest.master.infrastructure.queries.master_config_lookup import SqlMasterConfigLookup
 
 
 @dataclass(frozen=True)
@@ -23,107 +16,23 @@ class IngestionMasterConfig:
 
 class IngestionMasterConfigResolver:
 
-    def __init__(
-        self,
-        session: AsyncSession,
-    ):
-        self._extraction_repository = (
-            ExtractionStrategyRepositoryImpl(
-                session=session,
-            )
+    def __init__(self, session: AsyncSession, lookup: MasterConfigLookup | None = None):
+        self._lookup = lookup or SqlMasterConfigLookup(session)
+
+    async def resolve(self, *, extraction_engine_code: str, chunking_strategy_code: str,
+                      model_set_code: str | None = None) -> IngestionMasterConfig:
+        extraction, chunking, model_set = await self._lookup.lookup(
+            self._normalize_code(extraction_engine_code),
+            self._normalize_code(chunking_strategy_code),
+            self._normalize_code(model_set_code) if model_set_code else None,
         )
-        self._chunking_repository = (
-            ChunkingStrategyRepositoryImpl(
-                session=session,
-            )
-        )
-        self._model_set_repository = (
-            ModelSetRepositoryImpl(
-                session=session,
-            )
-        )
-
-    async def resolve(
-        self,
-        *,
-        extraction_engine_code: str,
-        chunking_strategy_code: str,
-        model_set_code: str | None = None,
-    ) -> IngestionMasterConfig:
-
-        extraction_engine = (
-            await self._extraction_repository
-            .get_by_code(
-                self._normalize_code(
-                    extraction_engine_code,
-                )
-            )
-        )
-
-        if (
-            extraction_engine is None
-            or extraction_engine.id is None
-            or not extraction_engine.enabled
-        ):
-            raise ValueError(
-                "extraction_engine_code is not "
-                "available or disabled"
-            )
-
-        chunking_strategy = (
-            await self._chunking_repository
-            .get_by_code(
-                self._normalize_code(
-                    chunking_strategy_code,
-                )
-            )
-        )
-
-        if (
-            chunking_strategy is None
-            or chunking_strategy.id is None
-            or not chunking_strategy.enabled
-        ):
-            raise ValueError(
-                "chunking_strategy_code is not "
-                "available or disabled"
-            )
-
-        model_set_id = await self._resolve_model_set_id(
-            model_set_code,
-        )
-
-        return IngestionMasterConfig(
-            extraction_engine_id=extraction_engine.id,
-            chunking_strategy_id=chunking_strategy.id,
-            model_set_id=model_set_id,
-        )
-
-    async def _resolve_model_set_id(
-        self,
-        code: str | None,
-    ) -> UUID | None:
-
-        if not code:
-            return None
-
-        model_set = await self._model_set_repository.get_by_code(
-            self._normalize_code(
-                code,
-            )
-        )
-
-        if (
-            model_set is None
-            or model_set.id is None
-            or not model_set.enabled
-        ):
-            raise ValueError(
-                "model_set_code is not available "
-                "or disabled"
-            )
-
-        return model_set.id
+        if extraction is None:
+            raise ValueError('extraction_engine_code is not available or disabled')
+        if chunking is None:
+            raise ValueError('chunking_strategy_code is not available or disabled')
+        if model_set_code and model_set is None:
+            raise ValueError('model_set_code is not available or disabled')
+        return IngestionMasterConfig(extraction, chunking, model_set)
 
     @staticmethod
     def _normalize_code(

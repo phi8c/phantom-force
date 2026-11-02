@@ -135,7 +135,7 @@ async def test_information_field_upsert_returns_returned_row():
                 created_at=None,
                 updated_at=None,
             ),
-            document_type_model,
+            lambda **kwargs: document_type_model(**kwargs),
         ),
         (
             "upsert_information_type",
@@ -149,7 +149,7 @@ async def test_information_field_upsert_returns_returned_row():
                 created_at=None,
                 updated_at=None,
             ),
-            information_type_model,
+            lambda **kwargs: information_type_model(**kwargs),
         ),
         (
             "upsert_topic",
@@ -163,7 +163,7 @@ async def test_information_field_upsert_returns_returned_row():
                 created_at=None,
                 updated_at=None,
             ),
-            topic_model,
+            lambda **kwargs: topic_model(**kwargs),
         ),
     ],
 )

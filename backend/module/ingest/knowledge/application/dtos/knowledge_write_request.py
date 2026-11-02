@@ -15,3 +15,4 @@ class KnowledgeWriteRequest:
     model_name: str
     raw_response: dict[str, Any]
     document_context: KnowledgeDocumentContext | None = None
+    source_metadata: dict[str, Any] | None = None

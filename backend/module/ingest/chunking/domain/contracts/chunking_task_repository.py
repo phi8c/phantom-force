@@ -8,7 +8,18 @@ from module.ingest.chunking.domain.entities.chunking_task import (
 )
 
 
+class ChunkingLeaseLostError(RuntimeError):
+    pass
+
+
 class ChunkingTaskRepository(ABC):
+    @abstractmethod
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        pass
+
+    @abstractmethod
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        pass
 
     @abstractmethod
     async def get_by_id(

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from api.ingest_orchestration import _stage_counts_payload
+from api.ingest_orchestration_payload import stage_counts_payload as _stage_counts_payload
 
 
 def test_stage_counts_payload_aggregates_without_file_details():

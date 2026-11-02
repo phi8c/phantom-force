@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.extraction.domain.contracts.extraction_task_repository import (
@@ -26,6 +27,24 @@ from module.ingest.extraction.infrastructure.persistence.models.extraction_task_
 class ExtractionTaskRepositoryImpl(
     ExtractionTaskRepository,
 ):
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        result = await self.session.execute(select(ExtractionTaskModel.id).where(
+            ExtractionTaskModel.ingestion_job_id == ingestion_job_id,
+            ExtractionTaskModel.status.in_([TaskStatus.READY.value, TaskStatus.PROCESSING.value]),
+        ).limit(1))
+        return result.first() is not None
+
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        now = datetime.now(timezone.utc)
+        result = await self.session.execute(
+            update(ExtractionTaskModel).where(
+                ExtractionTaskModel.id == task_id,
+                ExtractionTaskModel.status == TaskStatus.PROCESSING.value,
+                ExtractionTaskModel.claimed_by == claimed_by,
+                ExtractionTaskModel.lease_until > now,
+            ).values(lease_until=lease_until, updated_at=now)
+        )
+        return result.rowcount == 1
 
     def __init__(
         self,

@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from contextlib import asynccontextmanager
 from importlib import import_module
@@ -166,10 +167,6 @@ class AuthCompositionSmokeTests(unittest.IsolatedAsyncioTestCase):
             AuthenticationContextType.MANAGEMENT,
             None,
         )
-        response = await request_as(management, requested_space_id)
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(business_logic_reached)
-
         another_space = uuid4()
         knowledge_space_user = self._current_user(
             AuthenticationContextType.KNOWLEDGE_SPACE,
@@ -185,6 +182,8 @@ class AuthCompositionSmokeTests(unittest.IsolatedAsyncioTestCase):
             "session_scope",
             stop_before_chat_dependencies,
         ):
+            with self.assertRaisesRegex(RuntimeError, "chat-business-logic-reached"):
+                await request_as(management, requested_space_id)
             with self.assertRaisesRegex(RuntimeError, "chat-business-logic-reached"):
                 await request_as(knowledge_space_user, requested_space_id)
         self.assertTrue(business_logic_reached)
@@ -295,6 +294,31 @@ class AuthCompositionSmokeTests(unittest.IsolatedAsyncioTestCase):
                     raise RuntimeError("request-failed")
 
         self.assertEqual(events, ["enter", ("exit", RuntimeError)])
+
+    async def test_session_scope_closes_when_request_is_cancelled(self):
+        events = []
+
+        class FakeSession:
+            pass
+
+        class FakeSessionContext:
+            async def __aenter__(self):
+                events.append("enter")
+                return FakeSession()
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                await asyncio.sleep(0)
+                events.append(("exit", exc_type))
+
+        async def cancelled_request():
+            async with session_scope():
+                raise asyncio.CancelledError()
+
+        with patch("bootstrap.database.async_session_factory", FakeSessionContext):
+            with self.assertRaises(asyncio.CancelledError):
+                await cancelled_request()
+
+        self.assertEqual(events, ["enter", ("exit", asyncio.CancelledError)])
 
     async def test_real_fastapi_auth_graph_can_be_constructed(self) -> None:
         async with async_session_factory() as session:

@@ -19,7 +19,7 @@ from module.ingest.extraction.composition.factory import (
     create_extract_document_use_case,
 )
 
-from bootstrap.database import async_session_factory
+from bootstrap.database import session_scope
 from module.ingest.config.application.use_cases.start_ingestion import (
     StartIngestionUseCase,
 )
@@ -151,7 +151,7 @@ from integration.ingest.classification.chunk_reader import (
 @asynccontextmanager
 async def create_ingestion_job_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield CreateIngestionJobUseCase(
             ingestion_config_repository=(
                 IngestionConfigRepositoryImpl(
@@ -167,7 +167,7 @@ async def create_ingestion_job_use_case_scope():
 @asynccontextmanager
 async def list_ingestion_jobs_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield ListIngestionJobsUseCase(
             repository=IngestionConfigRepositoryImpl(
                 session,
@@ -178,7 +178,7 @@ async def list_ingestion_jobs_use_case_scope():
 @asynccontextmanager
 async def get_ingestion_job_configuration_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield GetIngestionJobConfigurationResponseUseCase(
             repository=IngestionConfigRepositoryImpl(
                 session,
@@ -189,7 +189,7 @@ async def get_ingestion_job_configuration_use_case_scope():
 @asynccontextmanager
 async def save_ingestion_job_configuration_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield SaveIngestionJobConfigurationUseCase(
             ingestion_config_repository=(
                 IngestionConfigRepositoryImpl(
@@ -208,7 +208,7 @@ async def save_ingestion_job_configuration_use_case_scope():
 @asynccontextmanager
 async def get_ingestion_job_scope_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield GetIngestionJobScopeUseCase(
             repository=IngestionConfigRepositoryImpl(
                 session,
@@ -219,7 +219,7 @@ async def get_ingestion_job_scope_use_case_scope():
 @asynccontextmanager
 async def save_ingestion_job_scope_use_case_scope():
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield SaveIngestionJobScopeUseCase(
             ingestion_config_repository=(
                 IngestionConfigRepositoryImpl(
@@ -238,7 +238,7 @@ async def start_ingestion_use_case_scope(
     discovery_dispatcher,
 ):
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield StartIngestionUseCase(
             knowledge_space_repository=(
                 KnowledgeSpaceRepositoryImpl(
@@ -278,7 +278,7 @@ async def start_existing_ingestion_job_use_case_scope(
     discovery_dispatcher,
 ):
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield StartExistingIngestionJobUseCase(
             ingestion_config_repository=(
                 IngestionConfigRepositoryImpl(
@@ -311,7 +311,7 @@ def download_use_case_scope(
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             yield create_download_file_use_case(
                 session=session,
                 document_source=document_source,
@@ -343,7 +343,7 @@ def discovery_use_case_scope(
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             yield create_discover_batch_use_case(
                 session=session,
                 data_hub_provider_resolver=(
@@ -377,7 +377,7 @@ def extraction_use_case_scope(
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             yield create_extract_document_use_case(
                 session=session,
                 source_asset_reader=(
@@ -417,7 +417,7 @@ def chunking_use_case_scope(
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             yield create_chunk_document_use_case(
                 session=session,
                 extracted_asset_reader=(
@@ -485,7 +485,7 @@ def embedding_use_case_scope():
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             completion_service = ChunkBatchCompletionService(
                 session=session,
             )
@@ -512,7 +512,7 @@ def classification_use_case_scope(
 
     @asynccontextmanager
     async def scope():
-        async with async_session_factory() as session:
+        async with session_scope() as session:
             completion_service = ChunkBatchCompletionService(
                 session=session,
             )

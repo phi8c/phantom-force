@@ -9,6 +9,7 @@ import pytest
 from module.ingest.classification.application.use_cases.classify_batch import (
     ClassifyBatchUseCase,
 )
+from module.ingest.classification.domain.contracts.chunk_reader import ChunkForClassification, ChunkReader
 from module.ingest.classification.domain.contracts.classification_engine import (
     ClassificationResult,
 )
@@ -31,10 +32,41 @@ from module.ingest.knowledge.application.services.knowledge_writer import (
 from module.ingest.knowledge.application.services.knowledge_embedding_service import (
     KnowledgeEmbeddingService,
 )
+from module.ingest.knowledge.application.services.entity_resolution_service import (
+    EntityResolutionService,
+)
 from module.ingest.knowledge.domain.entities import (
+    KnowledgeObjectResolutionCandidate,
     KnowledgeRegistryEmbeddingKind,
     KnowledgeRegistryEmbeddingTarget,
 )
+
+
+@pytest.mark.asyncio
+async def test_resolved_alias_keeps_information_reference_to_canonical_object():
+    repo = FakeKnowledgeRepository()
+    embedding_service = KnowledgeEmbeddingService(repo, lambda _space_id: async_provider())
+    writer = KnowledgeWriter(
+        repo,
+        embedding_service,
+        EntityResolutionService(repo, embedding_service),
+    )
+    canonical_raw = sample_response()
+    canonical_raw["objects"][0]["aliases"] = ["SP A"]
+    await writer.write(request(raw_response=canonical_raw))
+    canonical = repo.objects[("space", "product", "product_a")]
+
+    alias_raw = sample_response()
+    alias_raw["objects"][0]["identifier_code"] = "sp_a"
+    alias_raw["objects"][0]["object_name"] = "SP A"
+    alias_raw["information"][0]["object_refs"] = ["sp_a"]
+    await writer.write(request(raw_response=alias_raw))
+
+    assert repo.information[-1].object_refs[0]["object_id"] == str(canonical.id)
+
+
+async def async_provider():
+    return FakeTextEmbeddingProvider()
 
 
 def test_knowledge_does_not_import_config_infrastructure():
@@ -715,12 +747,48 @@ class FakeKnowledgeRepository:
     async def upsert_information_type(self, entity):
         return self._upsert(self.information_types, ("space", entity.code), entity)
 
+    async def upsert_information_types(self, entities):
+        return [
+            await self.upsert_information_type(entity)
+            for entity in entities
+        ]
+
     async def upsert_information_field(self, entity):
         return self._upsert(self.fields, ("space", entity.code), entity)
+
+    async def upsert_information_fields(self, entities):
+        return [
+            await self.upsert_information_field(entity)
+            for entity in entities
+        ]
 
     async def upsert_object(self, entity):
         key = ("space", entity.object_code, entity.identifier_code)
         return self._upsert(self.objects, key, entity)
+
+    async def acquire_object_resolution_lock(self, **_kwargs):
+        return None
+
+    async def find_object_exact(self, *, knowledge_space_id, object_code, identifier_code):
+        return self.objects.get(("space", object_code, identifier_code))
+
+    async def list_objects_by_type(self, *, knowledge_space_id, object_code):
+        return [item for (_, code, _), item in self.objects.items() if code == object_code]
+
+    async def find_similar_objects(self, *, knowledge_space_id, object_code, **_kwargs):
+        return [
+            KnowledgeObjectResolutionCandidate(item, 0.1)
+            for item in await self.list_objects_by_type(
+                knowledge_space_id=knowledge_space_id,
+                object_code=object_code,
+            )
+        ]
+
+    async def add_verified_object_aliases(self, *, object_id, aliases):
+        item = next(item for item in self.objects.values() if item.id == object_id)
+        item.aliases = list(item.aliases or [])
+        item.aliases.extend(alias for alias in aliases if alias not in item.aliases)
+        return item
 
     async def upsert_topic(self, entity):
         return self._upsert(self.topics, ("space", entity.code), entity)
@@ -864,9 +932,9 @@ class FakeTaskRepository:
         return task
 
 
-class FakeChunkReader:
+class FakeChunkReader(ChunkReader):
     async def list_by_batch_id(self, batch_id):
-        return []
+        return [ChunkForClassification(uuid4(), 'Source content', {})]
 
 
 class FakeClassificationEngine:
@@ -882,7 +950,7 @@ class FakeClassificationEngine:
             assert self.document_structure_analyzer.calls == 1
         return [
             ClassificationResult(
-                chunk_id=uuid4(),
+                chunk_id=chunks[0].id,
                 model_name="model",
                 raw_response=sample_response(),
             )

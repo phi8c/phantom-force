@@ -7,7 +7,8 @@ class DoclingProvider:
     def __init__(self):
         pipeline_options = PdfPipelineOptions()
         # BẮT BUỘC để giải quyết Lỗi 3 (PICTURE COUNT = 0)
-        pipeline_options.generate_picture_images = True 
+        pipeline_options.generate_picture_images = False
+        pipeline_options.do_ocr = False
         pipeline_options.do_table_structure = True
         
         self.converter = DocumentConverter(

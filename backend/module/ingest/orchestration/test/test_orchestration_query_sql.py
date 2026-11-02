@@ -49,6 +49,24 @@ async def test_batch_detail_query_filters_job_and_batch():
     assert "JOIN documents" in sql
 
 
+@pytest.mark.asyncio
+async def test_stage_counts_by_batch_use_one_grouped_query():
+    session = RecordingSession()
+    service = OrchestrationQueryService(
+        session=session,
+    )
+
+    result = await service.list_stage_counts_by_batch(
+        ingestion_job_id=uuid4(),
+    )
+
+    sql = compile_postgresql(session.statement)
+    assert result == {}
+    assert "ingestion_document_stage_states.ingestion_job_id =" in sql
+    assert "ingestion_document_stage_states.ingestion_batch_id" in sql
+    assert "GROUP BY" in sql
+
+
 class RecordingSession:
     def __init__(self):
         self.statement = None

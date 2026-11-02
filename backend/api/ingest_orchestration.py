@@ -13,7 +13,8 @@ from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from starlette.responses import StreamingResponse
 
-from bootstrap.database import async_session_factory
+from bootstrap.database import session_scope
+from api.ingest_orchestration_payload import stage_counts_payload as _stage_counts_payload
 from module.ingest.orchestration.composition import (
     create_orchestration_query_service,
 )
@@ -31,25 +32,10 @@ router = APIRouter(
 async def get_query_service() -> AsyncIterator[
     OrchestrationQueryService
 ]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield create_orchestration_query_service(
             session=session,
         )
-
-
-def _stage_counts_payload(stage_counts):
-    stages: dict[str, dict[str, int]] = {}
-
-    for count in stage_counts:
-        stage_key = count.stage.lower()
-        status_key = count.status.lower()
-
-        stages.setdefault(
-            stage_key,
-            {},
-        )[status_key] = count.count
-
-    return stages
 
 
 @router.get(
@@ -67,20 +53,23 @@ async def get_job_snapshot(
     stage_counts = await query_service.count_stages(
         ingestion_job_id=job_id,
     )
+    stage_counts_by_batch = (
+        await query_service.list_stage_counts_by_batch(
+            ingestion_job_id=job_id,
+        )
+    )
 
     batch_payloads = []
 
     for batch in batches:
-        batch_stage_counts = (
-            await query_service.list_batch_stage_counts(
-                ingestion_batch_id=batch.id,
-            )
-        )
         batch_payloads.append(
             {
                 **jsonable_encoder(asdict(batch)),
                 "stages": _stage_counts_payload(
-                    batch_stage_counts,
+                    stage_counts_by_batch.get(
+                        batch.id,
+                        [],
+                    ),
                 ),
             }
         )
@@ -236,7 +225,7 @@ async def stream_job_events(
             if await request.is_disconnected():
                 break
 
-            async with async_session_factory() as session:
+            async with session_scope() as session:
                 query_service = (
                     create_orchestration_query_service(
                         session=session,

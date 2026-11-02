@@ -16,3 +16,4 @@ class ChatResponse:
     information: list[dict[str, Any]] = field(
         default_factory=list,
     )
+    structured_results: list[dict[str, Any]] = field(default_factory=list)

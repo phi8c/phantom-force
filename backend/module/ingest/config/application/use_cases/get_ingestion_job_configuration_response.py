@@ -26,17 +26,8 @@ class GetIngestionJobConfigurationResponseUseCase:
         job_id: UUID,
     ) -> IngestionJobConfigurationEnvelope:
 
-        job = await self.repository.get_job_by_id(
-            job_id,
-        )
-
-        if job is None:
-            raise LookupError(
-                "ingestion_job_id was not found"
-            )
-
         configuration = (
-            await self.repository.get_configuration_by_job_id(
+            await self.repository.get_configuration_for_existing_job(
                 job_id,
             )
         )

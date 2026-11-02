@@ -1,0 +1,3 @@
+# Additional runtime dependency for PDF partition planning/writing.
+# Provider SDK dependencies remain those already used by each engine.
+pypdf>=6,<7

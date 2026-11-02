@@ -91,7 +91,7 @@ export const ingestionApi = {
     payload: IngestionConfigurationRequest,
   ) {
     const response =
-      await apiClient.put<IngestionConfigurationEnvelope>(
+      await apiClient.put<NonNullable<IngestionConfigurationEnvelope["data"]>>(
         `/ingest/jobs/${jobId}/configuration`,
         payload,
       );
@@ -115,7 +115,7 @@ export const ingestionApi = {
     payload: IngestionScopeRequest,
   ) {
     const response =
-      await apiClient.put<IngestionScopeEnvelope>(
+      await apiClient.put<NonNullable<IngestionScopeEnvelope["data"]>>(
         `/ingest/jobs/${jobId}/scope`,
         payload,
       );

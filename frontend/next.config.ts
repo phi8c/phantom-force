@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Chat logic testing can take several minutes; the rewrite defaults to 30s.
+    proxyTimeout: 10 * 60 * 1000,
+  },
   allowedDevOrigins: [
     "192.168.1.18",
   ],

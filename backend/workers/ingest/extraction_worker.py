@@ -7,6 +7,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from uuid import UUID
+from uuid import uuid4
 
 from module.ingest.extraction.application.use_cases.extract_document import (
     ExtractDocumentUseCase,
@@ -14,6 +15,7 @@ from module.ingest.extraction.application.use_cases.extract_document import (
 from module.ingest.orchestration.domain.enums import IngestionStage
 from shared.messaging.contracts import MessageConsumer
 from workers.ingest.message_settlement import nack_with_backoff
+from workers.ingest.task_lease import execute_with_lease
 
 
 logger = logging.getLogger(__name__)
@@ -31,21 +33,23 @@ class ExtractionWorker:
                 ExtractDocumentUseCase
             ],
         ],
-        claim_size: int = 20,
+        claim_size: int = 1,
         lease_seconds: int = 300,
-        max_concurrency: int = 5,
+        max_concurrency: int = 1,
     ):
         self.consumer = consumer
         self.claim_scope_factory = (
             claim_scope_factory
         )
         self.use_case_factory = use_case_factory
-        self.claim_size = claim_size
+        if min(claim_size, max_concurrency, lease_seconds) < 1:
+            raise ValueError('Worker limits must be positive')
+        self.claim_size = min(claim_size, max_concurrency)
         self.lease_seconds = lease_seconds
         self.semaphore = asyncio.Semaphore(
             max_concurrency
         )
-        self.worker_id = socket.gethostname()
+        self.worker_id = f'{socket.gethostname()}:{uuid4()}'
 
     async def run(
         self,
@@ -90,74 +94,82 @@ class ExtractionWorker:
                         ]
                     )
 
-                    lease_until = (
-                        datetime.now(
-                            timezone.utc
-                        )
-                        + timedelta(
-                            seconds=(
-                                self.lease_seconds
+                    while True:
+                        lease_until = (
+                            datetime.now(
+                                timezone.utc
                             )
-                        )
-                    )
-
-                    async with (
-                        self.claim_scope_factory()
-                    ) as claim_scope:
-                        (
-                            task_repository,
-                            uow,
-                            progress_service,
-                        ) = claim_scope
-
-                        tasks = (
-                            await task_repository
-                            .claim_ready(
-                                ingestion_job_id,
-                                limit=self.claim_size,
-                                claimed_by=(
-                                    self.worker_id
-                                ),
-                                lease_until=lease_until,
+                            + timedelta(
+                                seconds=(
+                                    self.lease_seconds
+                                )
                             )
                         )
 
-                        await uow.commit()
+                        async with (
+                            self.claim_scope_factory()
+                        ) as claim_scope:
+                            (
+                                task_repository,
+                                uow,
+                                progress_service,
+                            ) = claim_scope
 
-                        for task in tasks:
-                            await (
-                                progress_service
-                                .mark_stage_processing(
-                                    ingestion_job_id=(
-                                        task.ingestion_job_id
+                            tasks = (
+                                await task_repository
+                                .claim_ready(
+                                    ingestion_job_id,
+                                    limit=self.claim_size,
+                                    claimed_by=(
+                                        self.worker_id
                                     ),
-                                    document_id=(
-                                        task.document_id
-                                    ),
-                                    stage=(
-                                        IngestionStage
-                                        .EXTRACTION
-                                    ),
+                                    lease_until=lease_until,
                                 )
                             )
 
-                        await uow.commit()
-                        logger.info(
-                            "extraction claimed job_id=%s tasks=%s",
-                            ingestion_job_id,
-                            len(tasks),
-                        )
+                            await uow.commit()
 
-                    await asyncio.gather(
-                        *[
-                            self._process(
-                                task.id
+                            for task in tasks:
+                                await (
+                                    progress_service
+                                    .mark_stage_processing(
+                                        ingestion_job_id=(
+                                            task.ingestion_job_id
+                                        ),
+                                        document_id=(
+                                            task.document_id
+                                        ),
+                                        stage=(
+                                            IngestionStage
+                                            .EXTRACTION
+                                        ),
+                                    )
+                                )
+
+                            await uow.commit()
+                            logger.info(
+                                "extraction claimed job_id=%s tasks=%s",
+                                ingestion_job_id,
+                                len(tasks),
                             )
-                            for task in tasks
-                            if task.id
-                            is not None
-                        ]
-                    )
+
+                        await asyncio.gather(
+                            *[
+                                self._process(
+                                    task.id
+                                )
+                                for task in tasks
+                                if task.id
+                                is not None
+                            ]
+                        )
+                        if not tasks:
+                            async with self.claim_scope_factory() as scope:
+                                repository, _, _ = scope
+                                pending = await repository.has_unfinished(ingestion_job_id)
+                            if not pending:
+                                break
+                            await asyncio.sleep(min(10, self.lease_seconds / 3))
 
                     await (
                         message.ack()
@@ -192,10 +204,28 @@ class ExtractionWorker:
                     "extraction task_start task_id=%s",
                     task_id,
                 )
-                await use_case.execute(
-                    task_id,
-                )
+                await self._execute_with_heartbeat(use_case, task_id)
                 logger.info(
                     "extraction task_done task_id=%s",
                     task_id,
                 )
+
+    async def _execute_with_heartbeat(self, use_case, task_id):
+        async def renew():
+            async with self.claim_scope_factory() as scope:
+                repository, uow, _ = scope
+                renewed = await repository.renew_lease(
+                    task_id, claimed_by=self.worker_id,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=self.lease_seconds),
+                )
+                await uow.commit()
+                return renewed
+
+        async def completed():
+            async with self.claim_scope_factory() as scope:
+                repository, _, _ = scope
+                current = await repository.get_by_id(task_id)
+                return current is not None and current.status.value in {'COMPLETED', 'SKIPPED'}
+
+        return await execute_with_lease(use_case.execute(task_id), renew=renew, completed=completed,
+                                        interval=max(0.1, self.lease_seconds / 3))

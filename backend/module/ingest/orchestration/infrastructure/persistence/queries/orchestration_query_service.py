@@ -139,6 +139,43 @@ class OrchestrationQueryService:
             for row in result.all()
         ]
 
+    async def list_stage_counts_by_batch(
+        self,
+        *,
+        ingestion_job_id: UUID,
+    ) -> dict[UUID, list[StageCount]]:
+        statement = (
+            select(
+                IngestionDocumentStageStateModel.ingestion_batch_id,
+                IngestionDocumentStageStateModel.stage,
+                IngestionDocumentStageStateModel.status,
+                func.count().label("count"),
+            )
+            .where(
+                IngestionDocumentStageStateModel.ingestion_job_id
+                == ingestion_job_id,
+            )
+            .group_by(
+                IngestionDocumentStageStateModel.ingestion_batch_id,
+                IngestionDocumentStageStateModel.stage,
+                IngestionDocumentStageStateModel.status,
+            )
+        )
+        result = await self.session.execute(statement)
+        counts_by_batch: dict[UUID, list[StageCount]] = {}
+        for row in result.all():
+            counts_by_batch.setdefault(
+                row.ingestion_batch_id,
+                [],
+            ).append(
+                StageCount(
+                    stage=row.stage,
+                    status=row.status,
+                    count=row._mapping["count"],
+                )
+            )
+        return counts_by_batch
+
     async def get_batch(
         self,
         *,

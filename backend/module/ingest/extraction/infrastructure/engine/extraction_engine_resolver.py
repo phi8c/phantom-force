@@ -2,9 +2,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from module.ingest.extraction.infrastructure.engine.docling_extraction_engine import (
-    DoclingExtractionEngine,
-)
 from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
     IngestionConfigRepositoryImpl,
 )
@@ -101,7 +98,21 @@ class DbExtractionEngineResolver(
             normalized_code == "DOCLING"
             or normalized_provider == "docling"
         ):
-            return DoclingExtractionEngine()
+            from module.ingest.extraction.infrastructure.multipart.engine import MultipartExtractionEngine
+            return MultipartExtractionEngine('docling', configuration)
+
+        if normalized_code == "UNSTRUCTURED" or normalized_provider == "unstructured":
+            from module.ingest.extraction.infrastructure.multipart.engine import MultipartExtractionEngine
+            return MultipartExtractionEngine('unstructured', configuration)
+
+        if normalized_code in {"AZURE_DOCUMENT_INTELLIGENCE", "AZURE_DI"} or normalized_provider in {
+            "azure_document_intelligence", "azure_di",
+        }:
+            from shared.config.settings import settings
+            if not settings.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT or not settings.AZURE_DOCUMENT_INTELLIGENCE_KEY:
+                raise ValueError('Azure Document Intelligence endpoint/key are required')
+            from module.ingest.extraction.infrastructure.multipart.engine import MultipartExtractionEngine
+            return MultipartExtractionEngine('azure_document_intelligence', configuration)
 
         raise ValueError(
             "Unsupported extraction engine: "

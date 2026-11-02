@@ -107,7 +107,7 @@ def _create_provider_aware_dispatchers(
 @asynccontextmanager
 async def _queue_routing_resolver_scope(
 ) -> AsyncIterator[QueueRoutingResolver]:
-    from bootstrap.database import async_session_factory
+    from bootstrap.database import session_scope
     from module.ingest.config.application.services.queue_routing_resolver import (
         IngestionJobQueueRoutingResolver,
     )
@@ -122,7 +122,7 @@ async def _queue_routing_resolver_scope(
     )
     from shared.config.settings import settings
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         yield IngestionJobQueueRoutingResolver(
             ingestion_repository=IngestionConfigRepositoryImpl(
                 session

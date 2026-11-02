@@ -8,7 +8,19 @@ from module.ingest.classification.domain.entities.classification_task import (
 )
 
 
+class ClassificationLeaseLostError(RuntimeError):
+    pass
+
+
 class ClassificationTaskRepository(ABC):
+
+    @abstractmethod
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        pass
+
+    @abstractmethod
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        pass
 
     @abstractmethod
     async def get_by_id(

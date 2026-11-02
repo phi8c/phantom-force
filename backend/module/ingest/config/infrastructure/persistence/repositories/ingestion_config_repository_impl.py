@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.config.domain.contracts.ingestion_config_repository import (
@@ -241,84 +242,41 @@ class IngestionConfigRepositoryImpl(
             )
         )
 
-    async def save_configuration(
-        self,
-        configuration: IngestionJobConfiguration,
-    ) -> IngestionJobConfiguration:
-
-        result = await self.session.execute(
-            select(
-                IngestionJobConfigurationModel,
-            ).where(
-                IngestionJobConfigurationModel.ingestion_job_id
-                == configuration.ingestion_job_id,
-            )
-        )
-
-        model = result.scalar_one_or_none()
-
+    async def save_configuration(self, configuration: IngestionJobConfiguration) -> IngestionJobConfiguration:
+        values = dict(is_classification=configuration.is_classification,
+                      model_set_id=configuration.model_set_id,
+                      chunking_strategy_id=configuration.chunking_strategy_id,
+                      extraction_engine_id=configuration.extraction_engine_id,
+                      configuration=configuration.configuration)
+        statement = update(IngestionJobConfigurationModel).where(
+            IngestionJobConfigurationModel.ingestion_job_id == configuration.ingestion_job_id,
+        ).values(**values).returning(IngestionJobConfigurationModel)
+        model = (await self.session.execute(statement)).scalar_one_or_none()
         if model is None:
-            model = (
-                IngestionJobConfigurationMapper.to_model(
-                    configuration,
-                )
-            )
-            self.session.add(
-                model,
-            )
-        else:
-            model.is_classification = (
-                configuration.is_classification
-            )
-            model.model_set_id = configuration.model_set_id
-            model.chunking_strategy_id = (
-                configuration.chunking_strategy_id
-            )
-            model.extraction_engine_id = (
-                configuration.extraction_engine_id
-            )
-            model.configuration = configuration.configuration
+            model = IngestionJobConfigurationMapper.to_model(configuration)
+            self.session.add(model)
+            await self.session.flush()
+        return IngestionJobConfigurationMapper.to_entity(model)
 
-        await self.session.flush()
-        await self.session.refresh(
-            model,
-        )
-
-        return (
-            IngestionJobConfigurationMapper.to_entity(
-                model,
-            )
-        )
-
-    async def update_job_scope(
-        self,
-        *,
-        job_id: UUID,
-        scope_type: str | None,
-        scope_data: dict | None,
-    ) -> IngestionJob:
-
-        model = await self.session.get(
-            IngestionJobModel,
-            job_id,
-        )
-
+    async def update_job_scope(self, *, job_id: UUID, scope_type: str | None,
+                               scope_data: dict | None) -> IngestionJob:
+        statement = update(IngestionJobModel).where(IngestionJobModel.id == job_id).values(
+            scope_type=scope_type, scope_data=scope_data,
+        ).returning(IngestionJobModel)
+        model = (await self.session.execute(statement)).scalar_one_or_none()
         if model is None:
-            raise LookupError(
-                "ingestion_job_id was not found"
-            )
+            raise LookupError('ingestion_job_id was not found')
+        return IngestionJobMapper.to_entity(model)
 
-        model.scope_type = scope_type
-        model.scope_data = scope_data
-
-        await self.session.flush()
-        await self.session.refresh(
-            model,
-        )
-
-        return IngestionJobMapper.to_entity(
-            model,
-        )
+    async def get_configuration_for_existing_job(self, job_id: UUID) -> IngestionJobConfiguration | None:
+        statement = select(IngestionJobModel.id, IngestionJobConfigurationModel).outerjoin(
+            IngestionJobConfigurationModel,
+            IngestionJobConfigurationModel.ingestion_job_id == IngestionJobModel.id,
+        ).where(IngestionJobModel.id == job_id)
+        row = (await self.session.execute(statement)).one_or_none()
+        if row is None:
+            raise LookupError('ingestion_job_id was not found')
+        return IngestionJobConfigurationMapper.to_entity(row[1]) if row[1] is not None else None
 
     async def mark_job_ready(
         self,

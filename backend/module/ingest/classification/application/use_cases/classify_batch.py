@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from datetime import timezone
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from module.ingest.classification.domain.contracts.document_structure_analyzer i
     DocumentStructureAnalyzer,
 )
 from module.ingest.classification.domain.contracts.classification_task_repository import (
+    ClassificationLeaseLostError,
     ClassificationTaskRepository,
 )
 from module.ingest.classification.domain.contracts.unit_of_work import (
@@ -74,6 +76,7 @@ class ClassifyBatchUseCase:
             | None
         ) = None,
         max_attempts: int = 3,
+        page_size: int = 32,
     ):
         self.task_repository = task_repository
         self.chunk_reader = chunk_reader
@@ -95,6 +98,9 @@ class ClassifyBatchUseCase:
         )
         self.uow = uow
         self.max_attempts = max_attempts
+        if not 1 <= page_size <= 1000:
+            raise ValueError('Classification page size must be between 1 and 1000')
+        self.page_size = page_size
 
     async def execute(
         self,
@@ -125,6 +131,7 @@ class ClassifyBatchUseCase:
                 "Classification task must be PROCESSING"
             )
 
+        original_owner = task.claimed_by
         try:
             logger.info(
                 "classification usecase_start task_id=%s job_id=%s batch_id=%s",
@@ -133,140 +140,19 @@ class ClassifyBatchUseCase:
                 task.batch_id,
             )
 
-            chunks = await self.chunk_reader.list_by_batch_id(
-                task.batch_id,
-            )
-            logger.info(
-                "classification chunks_loaded task_id=%s chunks=%s",
-                task_id,
-                len(chunks),
-            )
-
-            logger.info(
-                "classification document_context_start task_id=%s document_id=%s",
-                task_id,
-                task.document_id,
-            )
-            document_context = await (
-                self.document_structure_analyzer
-                .analyze(
-                    ingestion_job_id=task.ingestion_job_id,
-                    document_id=task.document_id,
-                )
-            )
-            logger.info(
-                "classification document_context_done task_id=%s document_type=%s topic=%s",
-                task_id,
-                document_context.document_type.code,
-                document_context.topic.code,
-            )
-
-            logger.info(
-                "classification engine_start task_id=%s chunks=%s",
-                task_id,
-                len(chunks),
-            )
-            results = await (
-                self.classification_engine
-                .classify_batch(
-                    chunks,
-                    document_context=document_context,
-                )
-            )
-            logger.info(
-                "classification engine_done task_id=%s results=%s",
-                task_id,
-                len(results),
-            )
-
-            classifications = []
-            for result in results:
-                self._validate_response_contract(
-                    result.raw_response,
-                    task_id=task.id,
-                    chunk_id=result.chunk_id,
-                )
-                classifications.append(
-                    ChunkClassification(
-                        id=None,
-                        chunk_id=result.chunk_id,
-                        model_name=result.model_name,
-                        label=self._sensitivity_level_from_raw_response(
-                            result.raw_response,
-                            task_id=task.id,
-                            chunk_id=result.chunk_id,
-                        ),
-                        confidence=None,
-                        raw_response=result.raw_response,
-                        created_at=None,
-                    )
-                )
-
-            logger.info(
-                "classification persist_start task_id=%s classifications=%s",
-                task_id,
-                len(classifications),
-            )
-            await self.classification_repository.upsert_many(
-                classifications,
-            )
-            logger.info(
-                "classification persist_done task_id=%s classifications=%s",
-                task_id,
-                len(classifications),
-            )
-
-            logger.info(
-                "classification knowledge_persist_start task_id=%s results=%s",
-                task_id,
-                len(results),
-            )
-            ingestion_job = await (
-                self.ingestion_config_service.get_job(
-                    task.ingestion_job_id,
-                )
-            )
-
+            ingestion_job = await self.ingestion_config_service.get_job(task.ingestion_job_id)
             if ingestion_job is None:
-                raise ValueError(
-                    "Ingestion job not found",
-                )
-
-            for result in results:
-                if result.raw_response is None:
-                    continue
-
-                try:
-                    await self.knowledge_writer.write(
-                        KnowledgeWriteRequest(
-                            knowledge_space_id=(
-                                ingestion_job
-                                .knowledge_space_id
-                            ),
-                            document_id=task.document_id,
-                            chunk_id=result.chunk_id,
-                            model_name=result.model_name,
-                            raw_response=result.raw_response,
-                            document_context=(
-                                self._knowledge_document_context(
-                                    document_context,
-                                )
-                            ),
-                        )
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "classification structured_knowledge_parse_failed task_id=%s chunk_id=%s error=%s",
-                        task.id,
-                        result.chunk_id,
-                        exc,
-                    )
-                    raise
-            logger.info(
-                "classification knowledge_persist_done task_id=%s results=%s",
-                task_id,
-                len(results),
+                raise ValueError('Ingestion job not found')
+            document_context = await self.document_structure_analyzer.analyze(
+                ingestion_job_id=task.ingestion_job_id, document_id=task.document_id,
             )
+            processed = 0
+            async for chunks in self.chunk_reader.iter_by_batch_id(task.batch_id, page_size=self.page_size):
+                await self._classify_page(task, ingestion_job, document_context, chunks)
+                processed += len(chunks)
+            if not processed:
+                raise ValueError('Cannot classify an empty chunk batch')
+            logger.info('classification chunks_processed task_id=%s chunks=%s', task_id, processed)
 
             signal = (
                 await self.batch_finalizer
@@ -278,6 +164,13 @@ class ClassifyBatchUseCase:
                 )
             )
 
+            if original_owner is not None:
+                owned = await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                )
+                if not owned:
+                    raise ClassificationLeaseLostError('Cannot complete classification after losing its lease')
             task.status = TaskStatus.COMPLETED
             task.claimed_by = None
             task.lease_until = None
@@ -316,6 +209,9 @@ class ClassifyBatchUseCase:
                     task.ingestion_job_id,
                 )
 
+        except ClassificationLeaseLostError:
+            await self.uow.rollback()
+            raise
         except Exception as exc:
             logger.exception(
                 "classification failed task_id=%s error=%s",
@@ -329,6 +225,14 @@ class ClassifyBatchUseCase:
             )
 
             if task is not None:
+                if task.status != TaskStatus.PROCESSING or task.claimed_by != original_owner:
+                    raise
+                if original_owner is not None and not await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                ):
+                    await self.uow.rollback()
+                    raise
                 if (
                     task.attempt_count
                     >= self.max_attempts
@@ -384,6 +288,37 @@ class ClassifyBatchUseCase:
                 )
 
             raise
+
+    async def _classify_page(self, task, ingestion_job, document_context, chunks):
+        if not chunks or any(not chunk.content.strip() for chunk in chunks):
+            raise ValueError('Classification page must contain readable chunks')
+        by_id = {chunk.id: chunk for chunk in chunks}
+        if len(by_id) != len(chunks):
+            raise ValueError('Duplicate input chunks')
+        results = await self.classification_engine.classify_batch(chunks, document_context=document_context)
+        result_ids = [result.chunk_id for result in results]
+        if len(result_ids) != len(by_id) or set(result_ids) != set(by_id):
+            raise ValueError('Classification must return exactly one result for every input chunk')
+        classifications = []
+        for result in results:
+            self._validate_response_contract(result.raw_response, task_id=task.id, chunk_id=result.chunk_id)
+            if not result.raw_response['information']:
+                logger.warning('classification no_information task_id=%s chunk_id=%s', task.id, result.chunk_id)
+            classifications.append(ChunkClassification(
+                id=None, chunk_id=result.chunk_id, model_name=result.model_name,
+                label=self._sensitivity_level_from_raw_response(
+                    result.raw_response, task_id=task.id, chunk_id=result.chunk_id),
+                confidence=None, raw_response=result.raw_response, created_at=None,
+            ))
+        await self.classification_repository.upsert_many(classifications)
+        context = self._knowledge_document_context(document_context)
+        for result in results:
+            await self.knowledge_writer.write(KnowledgeWriteRequest(
+                knowledge_space_id=ingestion_job.knowledge_space_id,
+                document_id=task.document_id, chunk_id=result.chunk_id, model_name=result.model_name,
+                raw_response=result.raw_response, document_context=context,
+                source_metadata=by_id[result.chunk_id].metadata,
+            ))
 
     @staticmethod
     def _sensitivity_level_from_raw_response(

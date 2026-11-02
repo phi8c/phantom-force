@@ -3,10 +3,12 @@ import logging
 from time import perf_counter
 from shared.logging.chat_diagnostics import print_chat_trace
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from bootstrap.database import session_scope
+from bootstrap.structured_data import create_chat_structured_reader
+from module.structured_data.composition import QueryRejected
 
 from module.chats.chat.application.dtos.request.chat_request import (
     ChatRequest,
@@ -34,7 +36,7 @@ from module.launch_on_railway.navigation.composition import (
     create_navigation_service,
 )
 from module.auth.facade import (
-    enforce_knowledge_space_access,
+    enforce_chat_access,
     get_authentication_context_guard,
     get_current_user,
 )
@@ -60,6 +62,7 @@ class ChatHttpResponse(BaseModel):
     intent: str | None = None
     knowledge_requests: list[dict]
     information: list[dict]
+    structured_results: list[dict] = Field(default_factory=list)
 
 
 @router.post(
@@ -72,7 +75,7 @@ async def chat(
     context_guard=Depends(get_authentication_context_guard),
 ) -> ChatHttpResponse:
 
-    enforce_knowledge_space_access(
+    enforce_chat_access(
         current_user,
         request.knowledge_space_id,
         context_guard,
@@ -126,14 +129,19 @@ async def chat(
             navigation_service=navigation_service,
             prompt_provider=prompt_provider,
             llm_gateway=llm_gateway,
+            structured_reader=create_chat_structured_reader(session=session,gateway=llm_gateway,
+                                                            prompt_provider=prompt_provider),
         )
 
-        result = await chat_service.chat(
-            ChatRequest(
-                knowledge_space_id=request.knowledge_space_id,
-                question=request.question,
+        try:
+            result = await chat_service.chat(
+                ChatRequest(
+                    knowledge_space_id=request.knowledge_space_id,
+                    question=request.question,
+                )
             )
-        )
+        except QueryRejected as error:
+            raise HTTPException(status_code=422,detail=str(error)) from error
 
     logger.info(
         "[CHAT_API] request_done knowledge_space_id=%s elapsed_ms=%s",
@@ -146,6 +154,7 @@ async def chat(
         intent=result.intent,
         knowledge_requests=result.knowledge_requests,
         information=result.information,
+        structured_results=result.structured_results,
     )
     print_chat_trace("HTTP_RESPONSE", response.model_dump(mode="json"))
     return response

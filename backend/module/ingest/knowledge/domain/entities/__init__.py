@@ -8,6 +8,7 @@ from module.ingest.knowledge.domain.entities.knowledge_entities import (
     KnowledgeInformationType,
     KnowledgeMatchedEntryPointsRecord,
     KnowledgeObject,
+    KnowledgeObjectResolutionCandidate,
     KnowledgeObjectStructureRecord,
     KnowledgeTopic,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "KnowledgeInformationType",
     "KnowledgeMatchedEntryPointsRecord",
     "KnowledgeObject",
+    "KnowledgeObjectResolutionCandidate",
     "KnowledgeObjectStructureRecord",
     "KnowledgeRegistryEmbeddingKind",
     "KnowledgeRegistryEmbeddingTarget",

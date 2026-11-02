@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Bell, Search } from "lucide-react";
+import Link from "next/link";
+import { Bell, Search, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -12,6 +13,9 @@ export function AdminHeaderActions({
 }: AdminHeaderActionsProps) {
   return (
     <div className="flex items-center gap-2">
+      <Link href="/chat" className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+        <MessageSquare className="size-4" /> Chat
+      </Link>
       <Button
         variant="ghost"
         size="icon"

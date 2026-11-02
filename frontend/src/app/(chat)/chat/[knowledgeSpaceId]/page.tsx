@@ -1,4 +1,4 @@
-import { KnowledgeSpaceSessionHeader } from "@/modules/auth";
+import { ChatWorkspace } from "@/modules/chat";
 
 interface KnowledgeSpaceChatPageProps {
   params: Promise<{
@@ -12,9 +12,6 @@ export default async function KnowledgeSpaceChatPage({
   const { knowledgeSpaceId } = await params;
 
   return (
-    <div className="min-h-screen bg-background">
-      <KnowledgeSpaceSessionHeader knowledgeSpaceId={knowledgeSpaceId} />
-      <main className="p-6">Chat</main>
-    </div>
+    <ChatWorkspace key={knowledgeSpaceId} knowledgeSpaceId={knowledgeSpaceId} />
   );
 }

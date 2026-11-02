@@ -95,9 +95,6 @@ class EnterpriseRepositoryImpl(
         )
 
         await self.session.flush()
-        await self.session.refresh(
-            model,
-        )
 
         return EnterpriseMapper.to_entity(
             model,

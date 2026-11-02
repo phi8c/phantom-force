@@ -19,6 +19,11 @@ class IngestionJobPage:
 
 
 class IngestionConfigRepository(ABC):
+    async def get_configuration_for_existing_job(self, job_id: UUID) -> IngestionJobConfiguration | None:
+        if await self.get_job_by_id(job_id) is None:
+            raise LookupError('ingestion_job_id was not found')
+        return await self.get_configuration_by_job_id(job_id)
+
     @abstractmethod
     async def list_jobs(
         self,

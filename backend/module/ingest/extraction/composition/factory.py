@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from module.structured_data.composition import create_structured_builder
 
 from module.ingest.extraction.application.use_cases.extract_document import (
     ExtractDocumentUseCase,
@@ -75,6 +76,7 @@ def create_extract_document_use_case(
         ),
         uow=uow,
         max_attempts=max_attempts,
+        structured_builder=create_structured_builder(session=session, object_storage=object_storage),
     )
 
 

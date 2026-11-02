@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import asdict
 from dataclasses import is_dataclass
 from pathlib import Path
@@ -11,6 +12,11 @@ _TRACE_LOCK = Lock()
 
 
 def print_chat_trace(stage: str, value: Any) -> None:
+    # Full vectors/payload dumps can block the event loop on stdout and disk.
+    # Keep ordinary timing/count logs; opt into this diagnostic dump explicitly.
+    if os.environ.get('CHAT_TRACE_ENABLED', '').strip().lower() not in {'1', 'true', 'yes', 'on'}:
+        return
+
     def serialize(item: Any) -> Any:
         if is_dataclass(item) and not isinstance(item, type):
             return asdict(item)

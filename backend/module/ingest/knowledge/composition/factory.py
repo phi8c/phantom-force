@@ -6,6 +6,9 @@ from module.ingest.embedding.composition import (
 from module.ingest.knowledge.application.services.knowledge_embedding_service import (
     KnowledgeEmbeddingService,
 )
+from module.ingest.knowledge.application.services.entity_resolution_service import (
+    EntityResolutionService,
+)
 from module.ingest.knowledge.application.services.knowledge_reader import (
     KnowledgeReader,
 )
@@ -24,16 +27,21 @@ def create_knowledge_writer(
     repository = KnowledgeRepositoryImpl(
         session=session,
     )
+    embedding_service = KnowledgeEmbeddingService(
+        repository=repository,
+        embedder_factory=lambda knowledge_space_id: (
+            create_text_embedding_provider(
+                session=session,
+                knowledge_space_id=knowledge_space_id,
+            )
+        ),
+    )
     return KnowledgeWriter(
         repository=repository,
-        embedding_service=KnowledgeEmbeddingService(
+        embedding_service=embedding_service,
+        entity_resolution_service=EntityResolutionService(
             repository=repository,
-            embedder_factory=lambda knowledge_space_id: (
-                create_text_embedding_provider(
-                    session=session,
-                    knowledge_space_id=knowledge_space_id,
-                )
-            ),
+            embedding_service=embedding_service,
         ),
     )
 

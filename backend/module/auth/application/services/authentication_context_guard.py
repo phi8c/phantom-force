@@ -13,6 +13,16 @@ from module.auth.domain.exception.exceptions import (
 
 
 class AuthenticationContextGuard:
+    def require_chat_access(
+        self,
+        current_user: ResolveCurrentUserResult,
+        knowledge_space_id: UUID,
+    ) -> None:
+        if current_user.context_type is AuthenticationContextType.MANAGEMENT:
+            self.require_management(current_user)
+            return
+        self.require_knowledge_space(current_user, knowledge_space_id)
+
     def require_management(self, current_user: ResolveCurrentUserResult) -> None:
         if current_user.context_type is not AuthenticationContextType.MANAGEMENT:
             raise InvalidAuthenticationContextError(

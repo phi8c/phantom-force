@@ -33,6 +33,12 @@ class KnowledgeObject:
     updated_at: datetime | None
 
 
+@dataclass(frozen=True)
+class KnowledgeObjectResolutionCandidate:
+    object: KnowledgeObject
+    distance: float
+
+
 @dataclass
 class KnowledgeInformationType:
     id: UUID | None

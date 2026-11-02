@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { StepModal } from "@/components/shared/step-modal";
 
@@ -29,7 +29,12 @@ const steps = [
   "Source Scope",
 ];
 
-export function IngestionConfigModal({
+export function IngestionConfigModal(props: IngestionConfigModalProps) {
+  if (!props.open || !props.ingestionJobId) return null;
+  return <IngestionConfigForm key={props.ingestionJobId} {...props} />;
+}
+
+function IngestionConfigForm({
   open,
   ingestionJobId,
   knowledgeSpaceId,
@@ -37,29 +42,36 @@ export function IngestionConfigModal({
   onSaved,
 }: IngestionConfigModalProps) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [extractionEngineCode, setExtractionEngineCode] =
-    useState("");
-  const [chunkingStrategyCode, setChunkingStrategyCode] =
-    useState("");
-  const [classification, setClassification] =
-    useState(true);
-  const [configurationText, setConfigurationText] =
-    useState("{}");
-  const [selectedRoots, setSelectedRoots] = useState<
-    IngestionScopeRoot[]
-  >([]);
+  const [extractionEngineOverride, setExtractionEngineCode] = useState<string | null>(null);
+  const [chunkingStrategyOverride, setChunkingStrategyCode] = useState<string | null>(null);
+  const [classificationOverride, setClassification] = useState<boolean | null>(null);
+  const [configurationOverride, setConfigurationText] = useState<string | null>(null);
+  const [rootsOverride, setSelectedRoots] = useState<IngestionScopeRoot[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const extractionQuery = useExtractionEngines();
-  const chunkingQuery = useChunkingStrategies();
+  const extractionQuery = useExtractionEngines(open);
+  const chunkingQuery = useChunkingStrategies(open);
   const configurationQuery =
-    useIngestionConfiguration(ingestionJobId);
-  const scopeQuery = useIngestionScope(ingestionJobId);
+    useIngestionConfiguration(ingestionJobId, open);
+  const scopeQuery = useIngestionScope(ingestionJobId, open);
 
   const saveConfigurationMutation =
     useSaveIngestionConfiguration(ingestionJobId ?? "");
   const saveScopeMutation =
     useSaveIngestionScope(ingestionJobId ?? "");
+
+  // Server values remain the defaults until the user edits a field. The keyed
+  // form remounts on close/job change, so no effects or extra renders reset state.
+  const config = configurationQuery.data?.data;
+  const extractionEngineCode = extractionEngineOverride ??
+    extractionQuery.data?.find((item) => item.id === config?.extraction_engine_id)?.code ??
+    extractionQuery.data?.[0]?.code ?? '';
+  const chunkingStrategyCode = chunkingStrategyOverride ??
+    chunkingQuery.data?.find((item) => item.id === config?.chunking_strategy_id)?.code ??
+    chunkingQuery.data?.[0]?.code ?? '';
+  const classification = classificationOverride ?? config?.is_classification ?? true;
+  const configurationText = configurationOverride ?? JSON.stringify(config?.configuration ?? {}, null, 2);
+  const selectedRoots = rootsOverride ?? scopeQuery.data?.data?.scope_data?.roots ?? [];
 
   const loading =
     extractionQuery.isLoading ||
@@ -90,65 +102,6 @@ export function IngestionConfigModal({
     saving,
     selectedRoots.length,
   ]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    setCurrentStep(0);
-    setError(null);
-    setExtractionEngineCode("");
-    setChunkingStrategyCode("");
-    setClassification(true);
-    setConfigurationText("{}");
-    setSelectedRoots([]);
-  }, [open, ingestionJobId]);
-
-  useEffect(() => {
-    if (!open || extractionEngineCode) {
-      return;
-    }
-
-    const firstEngine = extractionQuery.data?.[0];
-    if (firstEngine) {
-      setExtractionEngineCode(firstEngine.code);
-    }
-  }, [extractionEngineCode, extractionQuery.data, open]);
-
-  useEffect(() => {
-    if (!open || chunkingStrategyCode) {
-      return;
-    }
-
-    const firstStrategy = chunkingQuery.data?.[0];
-    if (firstStrategy) {
-      setChunkingStrategyCode(firstStrategy.code);
-    }
-  }, [chunkingQuery.data, chunkingStrategyCode, open]);
-
-  useEffect(() => {
-    const config = configurationQuery.data?.data;
-
-    if (!open || !config) {
-      return;
-    }
-
-    setClassification(config.is_classification);
-    setConfigurationText(
-      JSON.stringify(config.configuration ?? {}, null, 2),
-    );
-  }, [configurationQuery.data, open]);
-
-  useEffect(() => {
-    const scope = scopeQuery.data?.data?.scope_data;
-
-    if (!open || !scope?.roots) {
-      return;
-    }
-
-    setSelectedRoots(scope.roots);
-  }, [open, scopeQuery.data]);
 
   async function handleSaveProcessing() {
     if (!ingestionJobId) {

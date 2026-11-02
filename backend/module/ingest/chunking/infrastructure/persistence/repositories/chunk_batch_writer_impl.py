@@ -1,3 +1,4 @@
+from contextlib import aclosing
 from datetime import datetime
 from datetime import timezone
 from collections.abc import Iterable
@@ -7,6 +8,8 @@ from uuid import uuid4
 from sqlalchemy import literal
 from sqlalchemy import func
 from sqlalchemy import select
+from sqlalchemy import insert
+from module.ingest.chunking.application.services.async_chunks import iterate_chunks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.chunking.domain.contracts.chunk_batch_writer import (
@@ -34,8 +37,12 @@ class ChunkBatchWriterImpl(
     def __init__(
         self,
         session: AsyncSession,
+        write_batch_size: int = 100,
     ):
         self.session = session
+        if write_batch_size < 1:
+            raise ValueError('Chunk write batch size must be positive')
+        self.write_batch_size = write_batch_size
 
     async def get_by_job_and_document(
         self,
@@ -86,6 +93,8 @@ class ChunkBatchWriterImpl(
         )
 
         if existing_batch is not None:
+            if existing_batch.total_chunks < 1:
+                raise ValueError('Cannot reuse an empty chunk batch')
             return existing_batch
 
         batch_id = uuid4()
@@ -113,27 +122,27 @@ class ChunkBatchWriterImpl(
         self.session.add(
             batch_model,
         )
+        await self.session.flush()
 
         total_chunks = 0
 
-        for chunk in chunks:
-            self.session.add(
-                DocumentChunkModel(
-                    id=None,
-                    batch_id=batch_id,
-                    document_id=document_id,
-                    chunk_index=chunk.index,
-                    title=chunk.title,
-                    content=chunk.content,
-                    metadata_payload=(
-                        chunk.metadata
-                        or {}
-                    ),
-                    created_at=now,
-                )
-            )
+        rows = []
+        async with aclosing(iterate_chunks(chunks)) as stream:
+            async for chunk in stream:
+                if chunk.index != total_chunks:
+                    raise ValueError('Chunk indices must be contiguous and start at zero')
+                rows.append(dict(id=uuid4(), batch_id=batch_id, document_id=document_id,
+                                 chunk_index=chunk.index, title=chunk.title, content=chunk.content,
+                                 metadata_payload=chunk.metadata or {}, created_at=now))
+                total_chunks += 1
+                if len(rows) >= self.write_batch_size:
+                    await self.session.execute(insert(DocumentChunkModel), rows)
+                    rows = []
 
-            total_chunks += 1
+        if not total_chunks:
+            raise ValueError('Chunking produced zero chunks; refusing an empty batch')
+        if rows:
+            await self.session.execute(insert(DocumentChunkModel), rows)
 
         batch_model.total_chunks = total_chunks
 

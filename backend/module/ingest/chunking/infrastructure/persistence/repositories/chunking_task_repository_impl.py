@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.chunking.domain.contracts.chunking_task_repository import (
@@ -26,6 +27,22 @@ from module.ingest.chunking.infrastructure.persistence.models.chunking_task_mode
 class ChunkingTaskRepositoryImpl(
     ChunkingTaskRepository,
 ):
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        result = await self.session.execute(select(ChunkingTaskModel.id).where(
+            ChunkingTaskModel.ingestion_job_id == ingestion_job_id,
+            ChunkingTaskModel.status.in_([TaskStatus.READY.value, TaskStatus.PROCESSING.value]),
+        ).limit(1))
+        return result.first() is not None
+
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        now = datetime.now(timezone.utc)
+        result = await self.session.execute(update(ChunkingTaskModel).where(
+            ChunkingTaskModel.id == task_id,
+            ChunkingTaskModel.status == TaskStatus.PROCESSING.value,
+            ChunkingTaskModel.claimed_by == claimed_by,
+            ChunkingTaskModel.lease_until > now,
+        ).values(lease_until=lease_until, updated_at=now))
+        return result.rowcount == 1
 
     def __init__(
         self,

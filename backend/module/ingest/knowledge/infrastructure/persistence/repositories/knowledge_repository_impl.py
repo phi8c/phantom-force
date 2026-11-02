@@ -1,4 +1,6 @@
 import logging
+import hashlib
+from copy import deepcopy
 from datetime import datetime
 from datetime import timezone
 from time import perf_counter
@@ -6,7 +8,7 @@ from typing import Any
 from uuid import UUID
 from shared.logging.chat_diagnostics import print_chat_trace
 
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -25,6 +27,7 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeInformationType,
     KnowledgeMatchedEntryPointsRecord,
     KnowledgeObject,
+    KnowledgeObjectResolutionCandidate,
     KnowledgeObjectStructureRecord,
     KnowledgeRegistryEmbeddingKind,
     KnowledgeRegistryEmbeddingTarget,
@@ -43,6 +46,17 @@ from module.ingest.knowledge.infrastructure.persistence.models import (
     KnowledgeObjectModel,
     KnowledgeTopicModel,
 )
+from module.ingest.knowledge.domain.object_semantics import (
+    EMBEDDING_TEXT_VERSION,
+    identifier_embedding_text,
+    object_embedding_text,
+)
+
+
+from module.ingest.knowledge.infrastructure.persistence.queries.discovery_cache import vector_candidate_scope, vector_candidates
+from module.ingest.knowledge.infrastructure.persistence.queries.retrieval_projection import (
+    ReachableStructureQuery, structure_options, information_options,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +69,124 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         session: AsyncSession,
     ):
         self.session = session
+
+    async def acquire_object_resolution_lock(
+        self, *, knowledge_space_id: UUID, object_code: str
+    ) -> None:
+        lock_source = f"{knowledge_space_id}:{object_code}".encode("utf-8")
+        lock_key = int.from_bytes(
+            hashlib.sha256(lock_source).digest()[:8],
+            "big",
+            signed=True,
+        )
+        await self.session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
+    async def find_object_exact(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        object_code: str,
+        identifier_code: str | None,
+    ) -> KnowledgeObject | None:
+        statement = select(KnowledgeObjectModel).where(
+            KnowledgeObjectModel.knowledge_space_id == knowledge_space_id,
+            KnowledgeObjectModel.object_code == object_code,
+        )
+        statement = statement.where(
+            KnowledgeObjectModel.identifier_code.is_(None)
+            if identifier_code is None
+            else KnowledgeObjectModel.identifier_code == identifier_code
+        )
+        model = (await self.session.execute(statement)).scalar_one_or_none()
+        return KnowledgeMapper.object_to_entity(model) if model is not None else None
+
+    async def list_objects_by_type(
+        self, *, knowledge_space_id: UUID, object_code: str
+    ) -> list[KnowledgeObject]:
+        result = await self.session.execute(
+            select(KnowledgeObjectModel).where(
+                KnowledgeObjectModel.knowledge_space_id == knowledge_space_id,
+                KnowledgeObjectModel.object_code == object_code,
+            )
+        )
+        return [
+            KnowledgeMapper.object_to_entity(model)
+            for model in result.scalars().all()
+        ]
+
+    async def find_similar_objects(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        object_code: str,
+        object_embedding: list[float],
+        identifier_embedding: list[float] | None,
+        limit: int,
+    ) -> list[KnowledgeObjectResolutionCandidate]:
+        object_distance = KnowledgeObjectModel.object_embedding.cosine_distance(
+            object_embedding,
+        )
+        if identifier_embedding is None:
+            distance = object_distance
+        else:
+            identifier_distance = (
+                KnowledgeObjectModel.identifier_embedding.cosine_distance(
+                    identifier_embedding,
+                )
+            )
+            distance = func.least(object_distance, identifier_distance)
+        statement = (
+            select(KnowledgeObjectModel, distance.label("distance"))
+            .where(
+                KnowledgeObjectModel.knowledge_space_id == knowledge_space_id,
+                KnowledgeObjectModel.object_code == object_code,
+                KnowledgeObjectModel.object_embedding.is_not(None),
+            )
+            .order_by(distance)
+            .limit(limit)
+        )
+        rows = (await self.session.execute(statement)).all()
+        return [
+            KnowledgeObjectResolutionCandidate(
+                object=KnowledgeMapper.object_to_entity(model),
+                distance=float(candidate_distance),
+            )
+            for model, candidate_distance in rows
+            if candidate_distance is not None
+        ]
+
+    async def add_verified_object_aliases(
+        self, *, object_id: UUID, aliases: list[str]
+    ) -> KnowledgeObject:
+        result = await self.session.execute(
+            select(KnowledgeObjectModel)
+            .where(KnowledgeObjectModel.id == object_id)
+            .with_for_update()
+        )
+        model = result.scalar_one()
+        if isinstance(model.aliases, dict):
+            payload = deepcopy(model.aliases)
+            existing = list(payload.get("verified", []))
+        else:
+            payload = None
+            existing = list(model.aliases) if isinstance(model.aliases, list) else []
+        normalized = {
+            str(value).strip().casefold()
+            for value in existing
+            if isinstance(value, str)
+        }
+        for alias in aliases:
+            if alias.strip().casefold() not in normalized:
+                existing.append(alias)
+                normalized.add(alias.strip().casefold())
+        if payload is None:
+            model.aliases = existing
+        else:
+            payload["verified"] = existing
+            model.aliases = payload
+        model.updated_at = datetime.now(timezone.utc)
+        await self._flush_refresh(model)
+        return KnowledgeMapper.object_to_entity(model)
 
     async def upsert_document_type(
         self,
@@ -126,9 +258,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                     "object_name": entity.object_name,
                     "identifier_name": entity.identifier_name,
                     "description": entity.description,
-                    "aliases": entity.aliases,
                     "metadata_payload": entity.metadata,
                 },
+            )
+            model.aliases = self._merge_aliases(
+                model.aliases,
+                entity.aliases,
             )
 
         await self._flush_refresh(model)
@@ -160,6 +295,35 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             model,
         )
 
+    async def upsert_information_types(
+        self,
+        entities: list[KnowledgeInformationType],
+    ) -> list[KnowledgeInformationType]:
+        if not entities:
+            return []
+        models = await self._upsert_many_by_space_code(
+            model_class=KnowledgeInformationTypeModel,
+            values=[
+                {
+                    "knowledge_space_id": entity.knowledge_space_id,
+                    "code": entity.code,
+                    "name": entity.name,
+                    "description": entity.description,
+                    "metadata_payload": entity.metadata,
+                }
+                for entity in entities
+            ],
+            merge_columns=[
+                "name",
+                "description",
+                "metadata_payload",
+            ],
+        )
+        return [
+            KnowledgeMapper.information_type_to_entity(model)
+            for model in models
+        ]
+
     async def upsert_information_field(
         self,
         entity: KnowledgeInformationField,
@@ -187,6 +351,39 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         return KnowledgeMapper.information_field_to_entity(
             model,
         )
+
+    async def upsert_information_fields(
+        self,
+        entities: list[KnowledgeInformationField],
+    ) -> list[KnowledgeInformationField]:
+        if not entities:
+            return []
+        models = await self._upsert_many_by_space_code(
+            model_class=KnowledgeInformationFieldModel,
+            values=[
+                {
+                    "knowledge_space_id": entity.knowledge_space_id,
+                    "code": entity.code,
+                    "name": entity.name,
+                    "description": entity.description,
+                    "data_type": entity.data_type,
+                    "unit_type": entity.unit_type,
+                    "metadata_payload": entity.metadata,
+                }
+                for entity in entities
+            ],
+            merge_columns=[
+                "name",
+                "description",
+                "data_type",
+                "unit_type",
+                "metadata_payload",
+            ],
+        )
+        return [
+            KnowledgeMapper.information_field_to_entity(model)
+            for model in models
+        ]
 
     async def upsert_topic(
         self,
@@ -314,30 +511,42 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             result = await self.session.execute(
                 select(KnowledgeObjectModel).where(
                     KnowledgeObjectModel.id.in_(object_ids),
-                    or_(
-                        KnowledgeObjectModel.object_embedding.is_(None),
-                        KnowledgeObjectModel.identifier_embedding.is_(None),
-                    ),
                 )
             )
             for model in result.scalars().all():
-                if model.object_embedding is None:
+                entity = KnowledgeMapper.object_to_entity(model)
+                versions = (model.metadata_payload or {}).get(
+                    "embedding_text_versions",
+                    {},
+                )
+                if (
+                    model.object_embedding is None
+                    or versions.get("object") != EMBEDDING_TEXT_VERSION
+                ):
                     targets.append(
                         KnowledgeRegistryEmbeddingTarget(
                             kind=KnowledgeRegistryEmbeddingKind.OBJECT,
                             id=model.id,
-                            text=model.object_code,
+                            text=object_embedding_text(entity),
+                            text_version=EMBEDDING_TEXT_VERSION,
                         )
                     )
                 if (
                     model.identifier_code is not None
-                    and model.identifier_embedding is None
+                    and (
+                        model.identifier_embedding is None
+                        or versions.get("identifier") != EMBEDDING_TEXT_VERSION
+                    )
                 ):
+                    text = identifier_embedding_text(entity)
+                    if text is None:
+                        continue
                     targets.append(
                         KnowledgeRegistryEmbeddingTarget(
                             kind=KnowledgeRegistryEmbeddingKind.IDENTIFIER,
                             id=model.id,
-                            text=model.identifier_code,
+                            text=text,
+                            text_version=EMBEDDING_TEXT_VERSION,
                         )
                     )
         return targets
@@ -347,23 +556,49 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         updates: list[KnowledgeRegistryEmbeddingUpdate],
     ) -> None:
 
+        grouped_updates: dict[
+            tuple[type, str],
+            list[KnowledgeRegistryEmbeddingUpdate],
+        ] = {}
         for update in updates:
-            model_class, column_name = self._embedding_model_column(
-                update.kind,
-            )
+            key = self._embedding_model_column(update.kind)
+            grouped_updates.setdefault(key, []).append(update)
+
+        for (model_class, column_name), model_updates in grouped_updates.items():
             result = await self.session.execute(
                 select(model_class).where(
-                    model_class.id == update.id,
+                    model_class.id.in_(
+                        [update.id for update in model_updates],
+                    ),
                 )
             )
-            model = result.scalar_one_or_none()
-            if model is None:
-                continue
-            if getattr(model, column_name) is not None:
-                continue
-            setattr(model, column_name, update.embedding)
-            if hasattr(model, "updated_at"):
-                model.updated_at = datetime.now(timezone.utc)
+            models_by_id = {
+                model.id: model
+                for model in result.scalars().all()
+            }
+            for update in model_updates:
+                model = models_by_id.get(update.id)
+                if model is None:
+                    continue
+                if (
+                    getattr(model, column_name) is not None
+                    and update.text_version is None
+                ):
+                    continue
+                setattr(model, column_name, update.embedding)
+                if (
+                    update.text_version is not None
+                    and isinstance(model, KnowledgeObjectModel)
+                ):
+                    metadata = dict(model.metadata_payload or {})
+                    versions = dict(
+                        metadata.get("embedding_text_versions", {})
+                    )
+                    versions[update.kind.value] = update.text_version
+                    metadata["embedding_text_versions"] = versions
+                    model.metadata_payload = metadata
+                if hasattr(model, "updated_at"):
+                    model.updated_at = datetime.now(timezone.utc)
 
         await self.session.flush()
 
@@ -387,7 +622,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             topic_codes,
         )
 
-        object_statement = select(KnowledgeObjectModel).where(
+        object_statement = select(KnowledgeObjectModel).options(structure_options(KnowledgeObjectModel)).where(
             KnowledgeObjectModel.knowledge_space_id
             == knowledge_space_id,
             KnowledgeObjectModel.object_code == object_code,
@@ -452,6 +687,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 KnowledgeInformationModel,
                 KnowledgeInformationTypeModel.code,
             )
+            .options(information_options())
             .outerjoin(
                 KnowledgeInformationTypeModel,
                 KnowledgeInformationTypeModel.id
@@ -464,34 +700,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             )
         )
 
-        # Diagnostic funnel for temporary retrieval debugging; remove after the
-        # object/type/topic mismatch is identified.
-        object_count = await self._count_information(
-            knowledge_space_id=knowledge_space_id,
-            object_ref_filter=object_ref_filter,
-        )
-        logger.info(
-            "[KNOWLEDGE_REPOSITORY] after object filter count=%s",
-            object_count,
-        )
-
         if information_type_code is not None:
             statement = statement.where(
                 KnowledgeInformationTypeModel.knowledge_space_id
                 == knowledge_space_id,
                 KnowledgeInformationTypeModel.code
                 == information_type_code,
-            )
-
-            information_type_count = await self._count_information(
-                knowledge_space_id=knowledge_space_id,
-                object_ref_filter=object_ref_filter,
-                information_type_code=information_type_code,
-            )
-            logger.info(
-                "[KNOWLEDGE_REPOSITORY] after information_type filter code=%s count=%s",
-                information_type_code,
-                information_type_count,
             )
 
         topic_filters = [
@@ -507,18 +721,6 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         if topic_filters:
             statement = statement.where(
                 or_(*topic_filters),
-            )
-
-            topic_count = await self._count_information(
-                knowledge_space_id=knowledge_space_id,
-                object_ref_filter=object_ref_filter,
-                information_type_code=information_type_code,
-                topic_filters=topic_filters,
-            )
-            logger.info(
-                "[KNOWLEDGE_REPOSITORY] after topic filter topics=%s count=%s",
-                topic_codes,
-                topic_count,
             )
 
         result = await self.session.execute(
@@ -565,16 +767,17 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             item.request_id: item
             for item in request_vectors or []
         }
-        for request in requests:
-            request_record = await self._discover_request(
-                knowledge_space_id=knowledge_space_id,
-                request=request,
-                request_vectors=vectors_by_request_id.get(
-                    str(request["request_id"]),
-                ),
-            )
-            if request_record is not None:
-                discovered.append(request_record)
+        with vector_candidate_scope():
+            for request in requests:
+                request_record = await self._discover_request(
+                    knowledge_space_id=knowledge_space_id,
+                    request=request,
+                    request_vectors=vectors_by_request_id.get(
+                        str(request["request_id"]),
+                    ),
+                )
+                if request_record is not None:
+                    discovered.append(request_record)
 
         logger.info(
             "[KNOWLEDGE_REPOSITORY] discover_done space=%s elapsed_ms=%s discovered_count=%s",
@@ -606,6 +809,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                 KnowledgeInformationModel,
                 KnowledgeInformationTypeModel.code,
             )
+            .options(information_options())
             .outerjoin(
                 KnowledgeInformationTypeModel,
                 KnowledgeInformationTypeModel.id
@@ -656,50 +860,6 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             )
             for model, information_type_code in rows
         ]
-
-    async def _count_information(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        object_ref_filter,
-        information_type_code: str | None = None,
-        topic_filters: list[Any] | None = None,
-    ) -> int:
-
-        statement = (
-            select(
-                func.count(KnowledgeInformationModel.id),
-            )
-            .select_from(KnowledgeInformationModel)
-            .outerjoin(
-                KnowledgeInformationTypeModel,
-                KnowledgeInformationTypeModel.id
-                == KnowledgeInformationModel.information_type_id,
-            )
-            .where(
-                KnowledgeInformationModel.knowledge_space_id
-                == knowledge_space_id,
-                object_ref_filter,
-            )
-        )
-
-        if information_type_code is not None:
-            statement = statement.where(
-                KnowledgeInformationTypeModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeInformationTypeModel.code
-                == information_type_code,
-            )
-
-        if topic_filters:
-            statement = statement.where(
-                or_(*topic_filters),
-            )
-
-        result = await self.session.execute(
-            statement,
-        )
-        return int(result.scalar_one())
 
     async def _discover_request(
         self,
@@ -813,6 +973,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             len(rows),
         )
 
+        available = await self._available_structure(knowledge_space_id=knowledge_space_id, rows=rows)
         record = KnowledgeDiscoveredRequestRecord(
             request_id=request_id,
             matched_entry_points=matched_entry_points,
@@ -834,24 +995,10 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                     request.get("information_field_seeds") or [],
                 ),
             },
-            available_objects=await self._available_objects(
-                knowledge_space_id=knowledge_space_id,
-                rows=rows,
-            ),
-            available_information_types=await (
-                self._available_information_types(
-                    knowledge_space_id=knowledge_space_id,
-                    rows=rows,
-                )
-            ),
-            available_topics=await self._available_topics(
-                knowledge_space_id=knowledge_space_id,
-                rows=rows,
-            ),
-            available_fields=await self._available_fields(
-                knowledge_space_id=knowledge_space_id,
-                rows=rows,
-            ),
+            available_objects=available.objects,
+            available_information_types=available.information_types,
+            available_topics=available.topics,
+            available_fields=available.fields,
             constraints=dict(request.get("constraints") or {}),
         )
         logger.info(
@@ -890,29 +1037,21 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         candidates: list[KnowledgeObjectStructureRecord] = []
         seen: set[tuple[str, str | None]] = set()
 
+        exact_filters = []
         if object_codes:
-            result = await self.session.execute(
-                select(KnowledgeObjectModel).where(
-                    KnowledgeObjectModel.knowledge_space_id
-                    == knowledge_space_id,
-                    KnowledgeObjectModel.object_code.in_(object_codes),
-                )
+            exact_filters.append(
+                KnowledgeObjectModel.object_code.in_(object_codes)
             )
-            for model in result.scalars().all():
-                self._append_object_candidate(
-                    candidates,
-                    seen,
-                    self._object_record(model),
-                )
-
         if identifier_codes:
+            exact_filters.append(
+                KnowledgeObjectModel.identifier_code.in_(identifier_codes)
+            )
+        if exact_filters:
             result = await self.session.execute(
-                select(KnowledgeObjectModel).where(
+                select(KnowledgeObjectModel).options(structure_options(KnowledgeObjectModel)).where(
                     KnowledgeObjectModel.knowledge_space_id
                     == knowledge_space_id,
-                    KnowledgeObjectModel.identifier_code.in_(
-                        identifier_codes,
-                    ),
+                    or_(*exact_filters),
                 )
             )
             for model in result.scalars().all():
@@ -981,7 +1120,7 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
 
         if codes:
             result = await self.session.execute(
-                select(model_class).where(
+                select(model_class).options(structure_options(model_class)).where(
                     model_class.knowledge_space_id
                     == knowledge_space_id,
                     model_class.code.in_(codes),
@@ -1035,13 +1174,18 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         base_filters,
     ):
 
+        # Discovery needs field names, never the potentially huge JSON values.
+        safe_data = case((func.jsonb_typeof(KnowledgeInformationModel.data) == 'object',
+                          KnowledgeInformationModel.data), else_=func.jsonb_build_object())
+        keys = func.jsonb_object_keys(safe_data).table_valued('key').render_derived()
+        field_codes = select(func.array_agg(keys.c.key)).select_from(keys).correlate(KnowledgeInformationModel).scalar_subquery()
         result = await self.session.execute(
             select(
                 KnowledgeInformationModel.information_type_id,
                 KnowledgeInformationModel.object_refs,
                 KnowledgeInformationModel.topic_refs,
-                KnowledgeInformationModel.data,
-            ).where(
+                field_codes.label('field_codes'),
+            ).distinct().where(
                 KnowledgeInformationModel.knowledge_space_id
                 == knowledge_space_id,
                 or_(*base_filters),
@@ -1049,113 +1193,15 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         )
         return result.all()
 
-    async def _available_objects(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        rows,
-    ) -> list[KnowledgeObjectStructureRecord]:
-
-        object_ids = self._object_ids_from_rows(rows)
-        if not object_ids:
-            return []
-
-        result = await self.session.execute(
-            select(KnowledgeObjectModel).where(
-                KnowledgeObjectModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeObjectModel.id.in_(object_ids),
-            )
+    async def _available_structure(self, *, knowledge_space_id, rows):
+        return await ReachableStructureQuery(self.session).load(
+            knowledge_space_id=knowledge_space_id,
+            object_ids=self._object_ids_from_rows(rows),
+            type_ids={row._mapping['information_type_id'] for row in rows
+                      if row._mapping['information_type_id'] is not None},
+            topic_codes=self._topic_codes_from_rows(rows),
+            field_codes=self._field_codes_from_rows(rows),
         )
-        return [
-            self._object_record(model)
-            for model in result.scalars().all()
-        ]
-
-    async def _available_information_types(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        rows,
-    ) -> list[KnowledgeCodeStructureRecord]:
-
-        type_ids = {
-            row._mapping["information_type_id"]
-            for row in rows
-            if row._mapping["information_type_id"] is not None
-        }
-        if not type_ids:
-            return []
-
-        result = await self.session.execute(
-            select(KnowledgeInformationTypeModel).where(
-                KnowledgeInformationTypeModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeInformationTypeModel.id.in_(type_ids),
-            )
-        )
-        return [
-            self._information_type_record(model)
-            for model in result.scalars().all()
-        ]
-
-    async def _available_topics(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        rows,
-    ) -> list[KnowledgeCodeStructureRecord]:
-
-        topic_codes = self._topic_codes_from_rows(rows)
-        if not topic_codes:
-            return []
-
-        result = await self.session.execute(
-            select(KnowledgeTopicModel).where(
-                KnowledgeTopicModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeTopicModel.code.in_(topic_codes),
-            )
-        )
-        return [
-            self._topic_record(model)
-            for model in result.scalars().all()
-        ]
-
-    async def _available_fields(
-        self,
-        *,
-        knowledge_space_id: UUID,
-        rows,
-    ) -> list[KnowledgeCodeStructureRecord]:
-
-        field_codes = self._field_codes_from_rows(rows)
-        if not field_codes:
-            return []
-
-        result = await self.session.execute(
-            select(KnowledgeInformationFieldModel).where(
-                KnowledgeInformationFieldModel.knowledge_space_id
-                == knowledge_space_id,
-                KnowledgeInformationFieldModel.code.in_(field_codes),
-            )
-        )
-        registry_fields = {
-            model.code: self._field_record(model)
-            for model in result.scalars().all()
-        }
-        return [
-            registry_fields.get(
-                code,
-                KnowledgeCodeStructureRecord(
-                    code=code,
-                    name=None,
-                    description=None,
-                    data_type=None,
-                ),
-            )
-            for code in sorted(field_codes)
-        ]
 
     async def _vector_code_candidates(
         self,
@@ -1179,8 +1225,8 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             knowledge_space_id,
             top_k,
         )
-        result = await self.session.execute(
-            select(model_class)
+        statement = (
+            select(model_class).options(structure_options(model_class))
             .where(
                 model_class.knowledge_space_id == knowledge_space_id,
                 model_class.embedding.is_not(None),
@@ -1189,8 +1235,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             .limit(top_k)
         )
 
+        async def load():
+            return (await self.session.execute(statement)).scalars().all()
+        models = await vector_candidates((knowledge_space_id, model_class.__tablename__, 'embedding', tuple(vector), top_k), load)
+
         records = []
-        for model in result.scalars().all():
+        for model in models:
             if model.code in seen:
                 continue
             seen.add(model.code)
@@ -1222,8 +1272,8 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             knowledge_space_id,
             top_k,
         )
-        result = await self.session.execute(
-            select(KnowledgeObjectModel)
+        statement = (
+            select(KnowledgeObjectModel).options(structure_options(KnowledgeObjectModel))
             .where(
                 KnowledgeObjectModel.knowledge_space_id
                 == knowledge_space_id,
@@ -1233,8 +1283,12 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
             .limit(top_k)
         )
 
+        async def load():
+            return (await self.session.execute(statement)).scalars().all()
+        models = await vector_candidates((knowledge_space_id, KnowledgeObjectModel.__tablename__, column.key, tuple(vector), top_k), load)
+
         records = []
-        for model in result.scalars().all():
+        for model in models:
             key = (
                 model.object_code,
                 model.identifier_code,
@@ -1344,19 +1398,14 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
                     ],
                 )
             )
-        filters.extend(
-            KnowledgeInformationModel.information_type_id.in_(
+        type_codes = list(dict.fromkeys(item.code for item in matched_entry_points.information_types))
+        if type_codes:
+            filters.append(KnowledgeInformationModel.information_type_id.in_(
                 select(KnowledgeInformationTypeModel.id).where(
-                    KnowledgeInformationTypeModel.knowledge_space_id
-                    == knowledge_space_id,
-                    KnowledgeInformationTypeModel.code
-                    == information_type.code,
+                    KnowledgeInformationTypeModel.knowledge_space_id == knowledge_space_id,
+                    KnowledgeInformationTypeModel.code.in_(type_codes),
                 )
-            )
-            for information_type in (
-                matched_entry_points.information_types
-            )
-        )
+            ))
         filters.extend(
             KnowledgeInformationModel.topic_refs.contains(
                 [
@@ -1456,6 +1505,9 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
 
         field_codes = set()
         for row in rows:
+            if 'field_codes' in row._mapping:
+                field_codes.update(row._mapping['field_codes'] or [])
+                continue
             data = row._mapping["data"]
             if isinstance(data, dict):
                 field_codes.update(str(code) for code in data.keys())
@@ -1559,6 +1611,37 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         await self.session.flush()
         return model
 
+    async def _upsert_many_by_space_code(
+        self,
+        *,
+        model_class,
+        values: list[dict[str, Any]],
+        merge_columns: list[str],
+    ):
+        statement = insert(model_class).values(values)
+        excluded = statement.excluded
+        update_values = {}
+        for column_name in merge_columns:
+            column = getattr(model_class, column_name).property.columns[0]
+            update_values[column] = func.coalesce(
+                excluded[column.name],
+                column,
+            )
+        update_values[model_class.updated_at.property.columns[0]] = func.now()
+        statement = (
+            statement.on_conflict_do_update(
+                index_elements=[
+                    model_class.knowledge_space_id,
+                    model_class.code,
+                ],
+                set_=update_values,
+            )
+            .returning(model_class)
+        )
+        result = await self.session.execute(statement)
+        await self.session.flush()
+        return list(result.scalars().all())
+
     async def _flush_refresh(
         self,
         model,
@@ -1579,3 +1662,27 @@ class KnowledgeRepositoryImpl(KnowledgeRepository):
         for key, value in values.items():
             if value is not None:
                 setattr(model, key, value)
+
+    @staticmethod
+    def _merge_aliases(existing, incoming):
+        if incoming is None:
+            return existing
+        if existing is None:
+            return deepcopy(incoming)
+        if isinstance(existing, list) and isinstance(incoming, list):
+            merged = deepcopy(existing)
+            for value in incoming:
+                if value not in merged:
+                    merged.append(deepcopy(value))
+            return merged
+        if isinstance(existing, dict) and isinstance(incoming, dict):
+            merged = deepcopy(existing)
+            for key, value in incoming.items():
+                if key not in merged:
+                    merged[key] = deepcopy(value)
+                elif isinstance(merged[key], list) and isinstance(value, list):
+                    for item in value:
+                        if item not in merged[key]:
+                            merged[key].append(deepcopy(item))
+            return merged
+        return existing

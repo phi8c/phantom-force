@@ -22,6 +22,9 @@ from module.ingest.knowledge.domain.enums import (
 from module.ingest.knowledge.application.services.knowledge_embedding_service import (
     KnowledgeEmbeddingService,
 )
+from module.ingest.knowledge.application.services.entity_resolution_service import (
+    EntityResolutionService,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -33,9 +36,11 @@ class KnowledgeWriter:
         self,
         repository: KnowledgeRepository,
         embedding_service: KnowledgeEmbeddingService | None = None,
+        entity_resolution_service: EntityResolutionService | None = None,
     ):
         self._repository = repository
         self._embedding_service = embedding_service
+        self._entity_resolution_service = entity_resolution_service
 
     async def write(
         self,
@@ -146,12 +151,16 @@ class KnowledgeWriter:
                         {
                             **source_identity,
                             "confidence": source_confidence,
+                            **({'chunk_provenance': deepcopy(request.source_metadata)}
+                               if request.source_metadata is not None else {}),
                         }
                     ],
                     confidence=source_confidence,
                     raw_model_output=model_raw_response,
                     metadata={
                         "model_name": request.model_name,
+                        **({'document_context': deepcopy(self._document_context_metadata(request.document_context))}
+                           if request.document_context is not None else {}),
                         "document_type_codes": [
                             document_type.code
                             for document_type
@@ -216,15 +225,14 @@ class KnowledgeWriter:
         raw_response: dict[str, Any],
     ):
 
-        result = {}
+        entities_by_code = {}
         for item in raw_response["information_types"]:
             code = item.get("code")
             if not code:
                 raise ValueError(
                     "information_types item missing code",
                 )
-            entity = await self._repository.upsert_information_type(
-                KnowledgeInformationType(
+            entity = KnowledgeInformationType(
                     id=None,
                     knowledge_space_id=knowledge_space_id,
                     code=str(code),
@@ -234,9 +242,14 @@ class KnowledgeWriter:
                     created_at=None,
                     updated_at=None,
                 )
+            entities_by_code[str(code)] = self._merge_registry_entity(
+                entities_by_code.get(str(code)),
+                entity,
             )
-            result[entity.code] = entity
-        return result
+        persisted = await self._repository.upsert_information_types(
+            list(entities_by_code.values()),
+        )
+        return {entity.code: entity for entity in persisted}
 
     async def _upsert_information_fields(
         self,
@@ -244,15 +257,14 @@ class KnowledgeWriter:
         raw_response: dict[str, Any],
     ):
 
-        result = {}
+        entities_by_code = {}
         for item in raw_response["information_fields"]:
             code = item.get("code")
             if not code:
                 raise ValueError(
                     "information_fields item missing code",
                 )
-            entity = await self._repository.upsert_information_field(
-                KnowledgeInformationField(
+            entity = KnowledgeInformationField(
                     id=None,
                     knowledge_space_id=knowledge_space_id,
                     code=str(code),
@@ -266,9 +278,14 @@ class KnowledgeWriter:
                     created_at=None,
                     updated_at=None,
                 )
+            entities_by_code[str(code)] = self._merge_registry_entity(
+                entities_by_code.get(str(code)),
+                entity,
             )
-            result[entity.code] = entity
-        return result
+        persisted = await self._repository.upsert_information_fields(
+            list(entities_by_code.values()),
+        )
+        return {entity.code: entity for entity in persisted}
 
     async def _upsert_objects(
         self,
@@ -283,8 +300,7 @@ class KnowledgeWriter:
                 raise ValueError(
                     "objects item missing object_code",
                 )
-            entity = await self._repository.upsert_object(
-                KnowledgeObject(
+            candidate = KnowledgeObject(
                     id=None,
                     knowledge_space_id=knowledge_space_id,
                     object_code=str(object_code),
@@ -301,10 +317,14 @@ class KnowledgeWriter:
                     created_at=None,
                     updated_at=None,
                 )
+            entity = (
+                await self._entity_resolution_service.resolve(candidate)
+                if self._entity_resolution_service is not None
+                else await self._repository.upsert_object(candidate)
             )
             result[
                 self._object_key(
-                    entity,
+                    candidate,
                 )
             ] = entity
         return result
@@ -606,3 +626,12 @@ class KnowledgeWriter:
         if data_type not in supported:
             return data_type
         return KnowledgeFieldDataType(data_type).value
+
+    @staticmethod
+    def _merge_registry_entity(existing, incoming):
+        if existing is None:
+            return incoming
+        for name, value in incoming.__dict__.items():
+            if value is None:
+                setattr(incoming, name, getattr(existing, name))
+        return incoming

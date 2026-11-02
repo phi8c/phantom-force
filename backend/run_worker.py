@@ -3,7 +3,7 @@ import asyncio
 import logging
 from uuid import UUID
 
-from bootstrap.database import async_session_factory
+from bootstrap.database import session_scope
 from bootstrap.data_hub import (
     create_data_hub_provider_resolver,
     create_download_document_source,
@@ -62,7 +62,7 @@ def create_file_storage():
 async def get_storage_provider_id() -> UUID:
     logger.info("Resolving active Supabase storage provider")
 
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         result = await session.execute(
             text(
                 """

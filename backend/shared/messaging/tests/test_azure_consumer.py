@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+import asyncio
 
-from shared.messaging.azure_service_bus.consumer import AzureMessageConsumer
+from shared.messaging.azure_service_bus.consumer import AzureMessageConsumer, AzureReceivedMessage
 
 
 class RawMessage:
@@ -40,6 +41,24 @@ class FakeAzureReceiver:
 
 
 class AzureMessageConsumerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_long_running_message_renews_and_stops_after_ack(self):
+        class RenewableReceiver(FakeAzureReceiver):
+            def __init__(self):
+                super().__init__([])
+                self.renewals = 0
+                self.renewed = asyncio.Event()
+
+            async def renew_message_lock(self, message):
+                self.renewals += 1
+                self.renewed.set()
+
+        receiver = RenewableReceiver()
+        message = AzureReceivedMessage(receiver, RawMessage('{}'), renew_interval=0.01)
+        await asyncio.wait_for(receiver.renewed.wait(), timeout=1)
+        await message.ack()
+        self.assertGreaterEqual(receiver.renewals, 1)
+        self.assertTrue(message._renewal.done())
+
     async def test_receive_normalizes_payload_and_maps_arguments(self) -> None:
         raw = RawMessage('{"ingestion_job_id": "job", "batch_size": 25}')
         receiver = FakeAzureReceiver([raw])

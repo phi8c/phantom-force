@@ -17,6 +17,7 @@ class KnowledgeRegistryEmbeddingTarget:
     kind: KnowledgeRegistryEmbeddingKind
     id: UUID
     text: str
+    text_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class KnowledgeRegistryEmbeddingUpdate:
     kind: KnowledgeRegistryEmbeddingKind
     id: UUID
     embedding: list[float]
+    text_version: str | None = None
 
 
 @dataclass(frozen=True)

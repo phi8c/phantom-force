@@ -1,5 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from module.ai.llm.composition import create_llm_gateway
+from module.prompt.composition import create_prompt_provider
+from module.ingest.chunking.infrastructure.engine.llm_structure_reviewer import LLMStructureReviewer
 
 from module.ingest.chunking.application.use_cases.chunk_document import (
     ChunkDocumentUseCase,
@@ -43,12 +46,22 @@ def create_chunk_document_use_case(
         session=session,
     )
 
+    def reviewer_factory(configuration):
+        return LLMStructureReviewer(
+            prompt_provider=create_prompt_provider(session=session),
+            llm_gateway=create_llm_gateway(session=session),
+            provider_code=configuration['provider_code'],
+            model_code=configuration['model_code'],
+            prompt_code=configuration.get('prompt_code', 'ingest.chunking.review_structure'),
+        )
+
     return ChunkDocumentUseCase(
         task_repository=task_repository,
         extracted_asset_reader=extracted_asset_reader,
         chunking_engine_resolver=(
             DbChunkingEngineResolver(
                 session=session,
+                reviewer_factory=reviewer_factory,
             )
         ),
         chunk_batch_writer=ChunkBatchWriterImpl(

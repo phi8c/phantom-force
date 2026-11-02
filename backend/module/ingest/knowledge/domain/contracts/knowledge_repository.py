@@ -11,6 +11,7 @@ from module.ingest.knowledge.domain.entities import (
     KnowledgeInformationSearchRecord,
     KnowledgeInformationType,
     KnowledgeObject,
+    KnowledgeObjectResolutionCandidate,
     KnowledgeRegistryEmbeddingTarget,
     KnowledgeRegistryEmbeddingUpdate,
     KnowledgeSemanticRequestVectors,
@@ -19,6 +20,46 @@ from module.ingest.knowledge.domain.entities import (
 
 
 class KnowledgeRepository(ABC):
+
+    @abstractmethod
+    async def acquire_object_resolution_lock(
+        self, *, knowledge_space_id: UUID, object_code: str
+    ) -> None:
+        pass
+
+    @abstractmethod
+    async def find_object_exact(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        object_code: str,
+        identifier_code: str | None,
+    ) -> KnowledgeObject | None:
+        pass
+
+    @abstractmethod
+    async def list_objects_by_type(
+        self, *, knowledge_space_id: UUID, object_code: str
+    ) -> list[KnowledgeObject]:
+        pass
+
+    @abstractmethod
+    async def find_similar_objects(
+        self,
+        *,
+        knowledge_space_id: UUID,
+        object_code: str,
+        object_embedding: list[float],
+        identifier_embedding: list[float] | None,
+        limit: int,
+    ) -> list[KnowledgeObjectResolutionCandidate]:
+        pass
+
+    @abstractmethod
+    async def add_verified_object_aliases(
+        self, *, object_id: UUID, aliases: list[str]
+    ) -> KnowledgeObject:
+        pass
 
     @abstractmethod
     async def upsert_document_type(
@@ -42,10 +83,24 @@ class KnowledgeRepository(ABC):
         pass
 
     @abstractmethod
+    async def upsert_information_types(
+        self,
+        entities: list[KnowledgeInformationType],
+    ) -> list[KnowledgeInformationType]:
+        pass
+
+    @abstractmethod
     async def upsert_information_field(
         self,
         entity: KnowledgeInformationField,
     ) -> KnowledgeInformationField:
+        pass
+
+    @abstractmethod
+    async def upsert_information_fields(
+        self,
+        entities: list[KnowledgeInformationField],
+    ) -> list[KnowledgeInformationField]:
         pass
 
     @abstractmethod

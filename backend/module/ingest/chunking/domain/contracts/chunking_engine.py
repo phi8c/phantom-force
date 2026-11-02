@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from contextlib import asynccontextmanager
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,11 @@ class Chunk:
 
 
 class ChunkingEngine(ABC):
+
+    @asynccontextmanager
+    async def open_chunks(self, document: ExtractedDocument):
+        """Own resources through asynchronous preparation and persistence."""
+        yield self.chunk(document)
 
     @abstractmethod
     def chunk(

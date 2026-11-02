@@ -3,6 +3,7 @@ import logging
 import tempfile
 from datetime import datetime
 from datetime import timezone
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from module.ingest.chunking.domain.contracts.chunking_engine_resolver import (
     ChunkingEngineResolver,
 )
 from module.ingest.chunking.domain.contracts.chunking_task_repository import (
+    ChunkingLeaseLostError,
     ChunkingTaskRepository,
 )
 from module.ingest.chunking.domain.contracts.downstream_task_scheduler import (
@@ -96,6 +98,7 @@ class ChunkDocumentUseCase:
                 "Chunking task must be PROCESSING"
             )
 
+        original_owner = task.claimed_by
         try:
             logger.info(
                 "chunking usecase_start task_id=%s job_id=%s document_id=%s",
@@ -149,83 +152,22 @@ class ChunkDocumentUseCase:
                         "chunking engine_start task_id=%s",
                         task_id,
                     )
-                    chunks = list(
-                        chunking_engine.chunk(
-                            ExtractedDocument(
+                    async with chunking_engine.open_chunks(
+                        ExtractedDocument(
+                            document_id=task.document_id,
+                            content_path=extracted_path,
+                        )
+                    ) as chunks:
+                        batch = await (
+                            self.chunk_batch_writer
+                            .create_with_chunks(
+                                ingestion_job_id=(
+                                    task.ingestion_job_id
+                                ),
                                 document_id=task.document_id,
-                                content_path=extracted_path,
+                                chunks=chunks,
                             )
                         )
-                    )
-                    print(
-                        "\n===== CHUNKING FINAL CHUNKS RAW START =====",
-                        flush=True,
-                    )
-                    print(
-                        f"task_id={task_id}",
-                        flush=True,
-                    )
-                    print(
-                        f"job_id={task.ingestion_job_id}",
-                        flush=True,
-                    )
-                    print(
-                        f"document_id={task.document_id}",
-                        flush=True,
-                    )
-                    print(
-                        f"chunks_count={len(chunks)}",
-                        flush=True,
-                    )
-                    for chunk in chunks:
-                        print(
-                            chunk,
-                            flush=True,
-                        )
-                    print(
-                        "===== CHUNKING FINAL CHUNKS RAW END =====\n",
-                        flush=True,
-                    )
-
-                    logger.info(
-                        "chunking engine_done task_id=%s chunks=%s",
-                        task_id,
-                        len(chunks),
-                    )
-                    print(
-                        "chunking engine_done "
-                        f"task_id={task_id} "
-                        f"job_id={task.ingestion_job_id} "
-                        f"document_id={task.document_id} "
-                        f"chunks={len(chunks)}",
-                        flush=True,
-                    )
-
-                    if not chunks:
-                        logger.warning(
-                            "chunking zero_chunks task_id=%s job_id=%s document_id=%s",
-                            task_id,
-                            task.ingestion_job_id,
-                            task.document_id,
-                        )
-                        print(
-                            "chunking zero_chunks "
-                            f"task_id={task_id} "
-                            f"job_id={task.ingestion_job_id} "
-                            f"document_id={task.document_id}",
-                            flush=True,
-                        )
-
-                    batch = await (
-                        self.chunk_batch_writer
-                        .create_with_chunks(
-                            ingestion_job_id=(
-                                task.ingestion_job_id
-                            ),
-                            document_id=task.document_id,
-                            chunks=chunks,
-                        )
-                    )
                     logger.info(
                         "chunking batch_saved task_id=%s batch_id=%s",
                         task_id,
@@ -241,6 +183,8 @@ class ChunkDocumentUseCase:
                         pass
 
             else:
+                if existing_batch.total_chunks < 1:
+                    raise ValueError("Existing empty chunk batch must be rebuilt; cannot report success")
                 batch = existing_batch
                 logger.info(
                     "chunking batch_reused task_id=%s batch_id=%s",
@@ -264,6 +208,13 @@ class ChunkDocumentUseCase:
                 )
             )
 
+            if original_owner is not None:
+                owned = await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                )
+                if not owned:
+                    raise ChunkingLeaseLostError('Cannot complete chunking after losing its lease')
             task.status = TaskStatus.COMPLETED
             task.claimed_by = None
             task.lease_until = None
@@ -351,6 +302,9 @@ class ChunkDocumentUseCase:
                     )
                 )
 
+        except ChunkingLeaseLostError:
+            await self.uow.rollback()
+            raise
         except Exception as exc:
             logger.exception(
                 "chunking failed task_id=%s error=%s",
@@ -370,6 +324,8 @@ class ChunkDocumentUseCase:
             )
 
             if task is not None:
+                if task.status != TaskStatus.PROCESSING or task.claimed_by != original_owner:
+                    raise
                 if (
                     task.attempt_count
                     >= self.max_attempts

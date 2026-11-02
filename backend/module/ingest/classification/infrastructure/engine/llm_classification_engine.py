@@ -1,6 +1,7 @@
 from enum import Enum
 import json
 import logging
+from module.ingest.classification.application.services.model_request_budget import ModelRequestBudget
 from typing import Any
 
 from module.ai.llm.composition import (
@@ -77,6 +78,7 @@ class LLMClassificationEngine(
         config = dict(
             prompt.configuration or {},
         )
+        budget = ModelRequestBudget.from_config(config)
         response_format = config.pop(
             "response_format",
             None,
@@ -88,6 +90,8 @@ class LLMClassificationEngine(
         results: list[ClassificationResult] = []
 
         for chunk in chunks:
+            user_prompt = self._build_user_prompt(chunk=chunk, document_context=document_context)
+            budget.validate(prompt.system_prompt, user_prompt, response_format=response_format)
             llm_result = await self._llm_gateway.generate(
                 provider_code=(
                     ClassificationProviderCode
@@ -100,10 +104,7 @@ class LLMClassificationEngine(
                     .value
                 ),
                 system_prompt=prompt.system_prompt,
-                user_prompt=self._build_user_prompt(
-                    chunk=chunk,
-                    document_context=document_context,
-                ),
+                user_prompt=user_prompt,
                 response_format=response_format,
                 config=config,
             )

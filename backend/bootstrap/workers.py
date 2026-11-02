@@ -44,7 +44,7 @@ from workers.ingest.discovery_worker import DiscoveryWorker
 from workers.ingest.embedding_worker import EmbeddingWorker
 from workers.ingest.extraction_worker import ExtractionWorker
 
-from bootstrap.database import async_session_factory
+from bootstrap.database import session_scope
 from bootstrap.modules import chunking_use_case_scope
 from bootstrap.modules import classification_use_case_scope
 from bootstrap.modules import discovery_use_case_scope
@@ -57,7 +57,7 @@ from bootstrap.queues import IngestDispatchers
 
 @asynccontextmanager
 async def _download_claim_scope() -> AsyncIterator[tuple]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         try:
             yield (
                 DownloadTaskRepositoryImpl(
@@ -77,7 +77,7 @@ async def _download_claim_scope() -> AsyncIterator[tuple]:
 
 @asynccontextmanager
 async def _extraction_claim_scope() -> AsyncIterator[tuple]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         try:
             yield (
                 ExtractionTaskRepositoryImpl(
@@ -97,7 +97,7 @@ async def _extraction_claim_scope() -> AsyncIterator[tuple]:
 
 @asynccontextmanager
 async def _chunking_claim_scope() -> AsyncIterator[tuple]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         try:
             yield (
                 ChunkingTaskRepositoryImpl(
@@ -117,7 +117,7 @@ async def _chunking_claim_scope() -> AsyncIterator[tuple]:
 
 @asynccontextmanager
 async def _embedding_claim_scope() -> AsyncIterator[tuple]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         try:
             yield (
                 EmbeddingTaskRepositoryImpl(
@@ -137,7 +137,7 @@ async def _embedding_claim_scope() -> AsyncIterator[tuple]:
 
 @asynccontextmanager
 async def _classification_claim_scope() -> AsyncIterator[tuple]:
-    async with async_session_factory() as session:
+    async with session_scope() as session:
         try:
             yield (
                 ClassificationTaskRepositoryImpl(

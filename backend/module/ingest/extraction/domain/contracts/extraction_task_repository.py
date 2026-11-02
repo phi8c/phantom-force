@@ -8,7 +8,19 @@ from module.ingest.extraction.domain.entities.extraction_task import (
 )
 
 
+class ExtractionLeaseLostError(RuntimeError):
+    pass
+
+
 class ExtractionTaskRepository(ABC):
+    @abstractmethod
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        pass
+
+    @abstractmethod
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        """Renew only a live PROCESSING lease owned by this worker."""
+        pass
 
     @abstractmethod
     async def get_by_id(

@@ -30,15 +30,6 @@ class SaveIngestionJobScopeUseCase:
         command: SaveIngestionJobScopeCommand,
     ) -> IngestionJobScopeResponse:
 
-        job = await self.ingestion_config_repository.get_job_by_id(
-            command.ingestion_job_id,
-        )
-
-        if job is None:
-            raise LookupError(
-                "ingestion_job_id was not found"
-            )
-
         scope_type = command.scope_type.strip().upper()
 
         if not scope_type:

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 import logging
 from uuid import UUID
 
-from bootstrap.database import async_session_factory
+from bootstrap.database import session_scope
 from module.data_platform.data_hub.composition import (
     create_data_hub_downloader_registry,
 )
@@ -97,7 +97,7 @@ def create_download_document_source():
             *,
             ingestion_job_id: UUID,
         ):
-            async with async_session_factory() as session:
+            async with session_scope() as session:
                 job = await IngestionConfigRepositoryImpl(
                     session
                 ).get_job_by_id(ingestion_job_id)

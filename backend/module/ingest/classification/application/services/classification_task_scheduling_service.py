@@ -147,25 +147,22 @@ class ClassificationTaskSchedulingService:
         batch_id: UUID,
     ) -> None:
 
-        chunks = await self.chunk_query.list_by_batch_id(
-            batch_id,
-        )
+        async for chunks in self.chunk_query.iter_by_batch_id(batch_id):
+            classifications = [
+                ChunkClassification(
+                    id=None,
+                    chunk_id=chunk.id,
+                    model_name="classification_disabled",
+                    label="disabled",
+                    confidence=None,
+                    raw_response={
+                        "classification": "disabled",
+                    },
+                    created_at=None,
+                )
+                for chunk in chunks
+            ]
 
-        classifications = [
-            ChunkClassification(
-                id=None,
-                chunk_id=chunk.id,
-                model_name="classification_disabled",
-                label="disabled",
-                confidence=None,
-                raw_response={
-                    "classification": "disabled",
-                },
-                created_at=None,
+            await self.classification_repository.upsert_many(
+                classifications,
             )
-            for chunk in chunks
-        ]
-
-        await self.classification_repository.upsert_many(
-            classifications,
-        )

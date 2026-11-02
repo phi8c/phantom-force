@@ -31,25 +31,30 @@ export function useCreateIngestionJob() {
   });
 }
 
-export function useExtractionEngines() {
+export function useExtractionEngines(enabled = true) {
   return useQuery({
     queryKey: ingestionQueryKeys.extractionEngines(),
     queryFn: () => ingestionApi.listExtractionEngines(),
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useChunkingStrategies() {
+export function useChunkingStrategies(enabled = true) {
   return useQuery({
     queryKey: ingestionQueryKeys.chunkingStrategies(),
     queryFn: () => ingestionApi.listChunkingStrategies(),
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useIngestionConfiguration(jobId: string | null) {
+export function useIngestionConfiguration(jobId: string | null, enabled = true) {
   return useQuery({
     queryKey: ingestionQueryKeys.configuration(jobId ?? ""),
     queryFn: () => ingestionApi.getConfiguration(jobId ?? ""),
-    enabled: Boolean(jobId),
+    enabled: enabled && Boolean(jobId),
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -59,19 +64,24 @@ export function useSaveIngestionConfiguration(jobId: string) {
   return useMutation({
     mutationFn: (payload: IngestionConfigurationRequest) =>
       ingestionApi.saveConfiguration(jobId, payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ingestionQueryKeys.configuration(jobId),
+    onMutate: () => queryClient.cancelQueries({
+      queryKey: ingestionQueryKeys.configuration(jobId),
+    }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(ingestionQueryKeys.configuration(jobId), {
+        configured: true,
+        data,
       });
     },
   });
 }
 
-export function useIngestionScope(jobId: string | null) {
+export function useIngestionScope(jobId: string | null, enabled = true) {
   return useQuery({
     queryKey: ingestionQueryKeys.scope(jobId ?? ""),
     queryFn: () => ingestionApi.getScope(jobId ?? ""),
-    enabled: Boolean(jobId),
+    enabled: enabled && Boolean(jobId),
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -81,9 +91,13 @@ export function useSaveIngestionScope(jobId: string) {
   return useMutation({
     mutationFn: (payload: IngestionScopeRequest) =>
       ingestionApi.saveScope(jobId, payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ingestionQueryKeys.scope(jobId),
+    onMutate: () => queryClient.cancelQueries({
+      queryKey: ingestionQueryKeys.scope(jobId),
+    }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(ingestionQueryKeys.scope(jobId), {
+        configured: true,
+        data,
       });
     },
   });

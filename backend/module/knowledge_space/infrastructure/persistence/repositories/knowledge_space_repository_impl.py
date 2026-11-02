@@ -80,9 +80,6 @@ class KnowledgeSpaceRepositoryImpl(
         )
 
         await self.session.flush()
-        await self.session.refresh(
-            model,
-        )
 
         return KnowledgeSpaceMapper.to_entity(
             model,
@@ -130,11 +127,6 @@ class KnowledgeSpaceRepositoryImpl(
             )
             .select_from(
                 KnowledgeSpaceModel,
-            )
-            .join(
-                EnterpriseModel,
-                EnterpriseModel.id
-                == KnowledgeSpaceModel.enterprise_id,
             )
         )
 

@@ -1,6 +1,8 @@
 import logging
+import math
 from datetime import datetime
 from datetime import timezone
+from datetime import timedelta
 from uuid import UUID
 
 from module.ingest.embedding.domain.contracts.batch_finalizer import (
@@ -16,6 +18,7 @@ from module.ingest.embedding.domain.contracts.embedding_engine_resolver import (
     EmbeddingEngineResolver,
 )
 from module.ingest.embedding.domain.contracts.embedding_task_repository import (
+    EmbeddingLeaseLostError,
     EmbeddingTaskRepository,
 )
 from module.ingest.embedding.domain.contracts.unit_of_work import (
@@ -56,6 +59,7 @@ class EmbedBatchUseCase:
             | None
         ) = None,
         max_attempts: int = 3,
+        page_size: int = 32,
     ):
         self.task_repository = task_repository
         self.chunk_reader = chunk_reader
@@ -70,6 +74,9 @@ class EmbedBatchUseCase:
         )
         self.uow = uow
         self.max_attempts = max_attempts
+        if not 1 <= page_size <= 1000:
+            raise ValueError('Embedding page size must be between 1 and 1000')
+        self.page_size = page_size
 
     async def execute(
         self,
@@ -90,6 +97,7 @@ class EmbedBatchUseCase:
                 "Embedding task must be PROCESSING"
             )
 
+        original_owner = task.claimed_by
         try:
             logger.info(
                 "embedding usecase_start task_id=%s job_id=%s batch_id=%s",
@@ -98,78 +106,14 @@ class EmbedBatchUseCase:
                 task.batch_id,
             )
 
-            chunks = await self.chunk_reader.list_by_batch_id(
-                task.batch_id,
-            )
-            logger.info(
-                "embedding chunks_loaded task_id=%s chunks=%s",
-                task_id,
-                len(chunks),
-            )
-
-            embedding_engine = (
-                await self.embedding_engine_resolver
-                .resolve_for_job(
-                    task.ingestion_job_id,
-                )
-            )
-
-            logger.info(
-                "embedding engine_start task_id=%s chunks=%s",
-                task_id,
-                len(chunks),
-            )
-            results = await embedding_engine.embed_batch(
-                chunks,
-            )
-            logger.info(
-                "embedding engine_done task_id=%s results=%s",
-                task_id,
-                len(results),
-            )
-
-            failed_results = [
-                result
-                for result in results
-                if result.status == "error"
-            ]
-
-            if failed_results:
-                raise RuntimeError(
-                    "Embedding engine failed for "
-                    f"{len(failed_results)} chunks"
-                )
-
-            embeddings = [
-                DocumentChunkEmbedding(
-                    id=None,
-                    chunk_id=result.chunk_id,
-                    model_name=result.model_name,
-                    embedding=result.vector,
-                    dimension=result.dimension,
-                    token_count=result.token_count,
-                    created_at=None,
-                )
-                for result in results
-                if (
-                    result.vector is not None
-                    and result.dimension is not None
-                )
-            ]
-
-            logger.info(
-                "embedding persist_start task_id=%s embeddings=%s",
-                task_id,
-                len(embeddings),
-            )
-            await self.embedding_repository.upsert_many(
-                embeddings,
-            )
-            logger.info(
-                "embedding persist_done task_id=%s embeddings=%s",
-                task_id,
-                len(embeddings),
-            )
+            embedding_engine = await self.embedding_engine_resolver.resolve_for_job(task.ingestion_job_id)
+            processed = 0
+            async for chunks in self.chunk_reader.iter_by_batch_id(task.batch_id, page_size=self.page_size):
+                await self._embed_page(embedding_engine, chunks)
+                processed += len(chunks)
+            if not processed:
+                raise ValueError('Cannot embed an empty chunk batch')
+            logger.info('embedding chunks_processed task_id=%s chunks=%s', task_id, processed)
 
             signal = (
                 await self.batch_finalizer
@@ -181,6 +125,13 @@ class EmbedBatchUseCase:
                 )
             )
 
+            if original_owner is not None:
+                owned = await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                )
+                if not owned:
+                    raise EmbeddingLeaseLostError('Cannot complete embedding after losing its lease')
             task.status = TaskStatus.COMPLETED
             task.claimed_by = None
             task.lease_until = None
@@ -219,6 +170,9 @@ class EmbedBatchUseCase:
                     task.ingestion_job_id,
                 )
 
+        except EmbeddingLeaseLostError:
+            await self.uow.rollback()
+            raise
         except Exception as exc:
             logger.exception(
                 "embedding failed task_id=%s error=%s",
@@ -232,6 +186,14 @@ class EmbedBatchUseCase:
             )
 
             if task is not None:
+                if task.status != TaskStatus.PROCESSING or task.claimed_by != original_owner:
+                    raise
+                if original_owner is not None and not await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                ):
+                    await self.uow.rollback()
+                    raise
                 if (
                     task.attempt_count
                     >= self.max_attempts
@@ -281,3 +243,24 @@ class EmbedBatchUseCase:
                 )
 
             raise
+
+    async def _embed_page(self, engine, chunks):
+        if not chunks or any(not chunk.content.strip() for chunk in chunks):
+            raise ValueError('Embedding page must contain readable chunks')
+        expected = {chunk.id for chunk in chunks}
+        results = await engine.embed_batch(chunks)
+        actual = [result.chunk_id for result in results]
+        if len(expected) != len(chunks) or len(actual) != len(expected) or set(actual) != expected:
+            raise ValueError('Embedding must return exactly one result for every input chunk')
+        if any(result.status != 'success' or not result.vector or type(result.dimension) is not int
+               or result.dimension != len(result.vector)
+               or any(type(value) not in (int, float) or not math.isfinite(value) for value in result.vector)
+               for result in results):
+            raise ValueError('Embedding engine returned an invalid or missing vector')
+        await self.embedding_repository.upsert_many([
+            DocumentChunkEmbedding(
+                id=None, chunk_id=result.chunk_id, model_name=result.model_name,
+                embedding=result.vector, dimension=result.dimension, token_count=result.token_count,
+                created_at=None,
+            ) for result in results
+        ])

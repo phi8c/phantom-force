@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import tempfile
 from collections.abc import AsyncIterator
 
@@ -84,15 +85,16 @@ class SupabaseFileStorage(
                 "rb",
             ) as file:
 
-                (
-                    self._client.storage
-                    .from_(self._bucket)
-                    .upload(
-                        path=path,
-                        file=file,
-                        file_options=file_options,
-                    )
-                )
+                upload = asyncio.create_task(asyncio.to_thread(
+                    self._client.storage.from_(self._bucket).upload,
+                    path=path, file=file, file_options=file_options,
+                ))
+                try:
+                    await asyncio.shield(upload)
+                except asyncio.CancelledError:
+                    # Keep the file open until the SDK stops using it.
+                    await asyncio.gather(upload, return_exceptions=True)
+                    raise
 
             return path
 
@@ -112,13 +114,7 @@ class SupabaseFileStorage(
         path: str,
     ) -> bytes:
 
-        return (
-            self._client.storage
-            .from_(self._bucket)
-            .download(
-                path,
-            )
-        )
+        return await asyncio.to_thread(self._client.storage.from_(self._bucket).download, path)
 
     async def delete(
         self,

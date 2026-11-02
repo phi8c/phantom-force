@@ -2,6 +2,7 @@ import json
 import logging
 from time import perf_counter
 from shared.logging.chat_diagnostics import print_chat_trace
+from module.chats.chat.application.contracts.structured_reader import StructuredReader
 
 from module.ai.llm.composition import LLMGateway
 from module.prompt.composition import PromptProvider
@@ -38,11 +39,13 @@ class ChatService:
         navigation_service: NavigationService,
         prompt_provider: PromptProvider,
         llm_gateway: LLMGateway,
+        structured_reader: StructuredReader | None = None,
     ):
         self._query_analyzer = query_analyzer
         self._navigation_service = navigation_service
         self._prompt_provider = prompt_provider
         self._llm_gateway = llm_gateway
+        self._structured_reader = structured_reader
 
     async def chat(
         self,
@@ -50,6 +53,12 @@ class ChatService:
     ) -> ChatResponse:
 
         started_at = perf_counter()
+        if self._structured_reader is not None:
+            structured = await self._structured_reader.query(
+                knowledge_space_id=request.knowledge_space_id, question=request.question,
+            )
+            if structured is not None:
+                return await self._structured_answer(request, structured)
         logger.info(
             "[CHAT_SERVICE] start knowledge_space_id=%s question_chars=%s",
             request.knowledge_space_id,
@@ -195,6 +204,33 @@ class ChatService:
         )
         print_chat_trace("CHAT_RESPONSE", response)
         return response
+
+    async def _structured_answer(self, request, result):
+        prompt = await self._prompt_provider.get_by_code(ChatPromptCode.ANSWER_GENERATION.value)
+        if prompt is None:
+            raise ValueError('Answer generation prompt not found or disabled')
+        config = dict(prompt.configuration or {})
+        response_format = config.pop('response_format',None)
+        payload = result.payload()
+        information = [{'information_id':result.sources[0]['dataset_id'],
+            'information_type_code':'structured_query_result','summary':'Computed spreadsheet query result',
+            'data':{'columns':result.columns,'rows':result.rows,'truncated':result.truncated,
+                    'column_metadata':result.column_metadata},
+            'source_refs':result.sources,'object_refs':[],'topic_refs':[],'confidence':None}]
+        response = await self._llm_gateway.generate(
+            provider_code=ChatProviderCode.AZURE_OPENAI.value,model_code=ChatModelCode.ANSWER_GENERATION.value,
+            system_prompt=prompt.system_prompt + '\nSpreadsheet facts must come only from computed query results. '
+                'Do not invent records or recalculate formulas. Preserve units: for a percent-formatted column, '
+                'an underlying Excel value of 0.25 means 25%; use column_metadata.number_format for presentation. '
+                'If truncated, disclose that the displayed result is partial. Cite the file, sheet and source range. '
+                'The client renders tables/charts from structured data; do not emit executable chart code.',
+            user_prompt=json.dumps({'question':request.question,'information':information,
+                'query_plan':result.plan,'chart':result.chart},ensure_ascii=False,default=str),
+            response_format=response_format,config=config)
+        if not response.content:
+            raise ValueError('Empty structured answer response')
+        return ChatResponse(answer=response.content,intent='STRUCTURED',knowledge_requests=[result.plan],
+                            information=information,structured_results=[payload])
 
     @staticmethod
     def _build_answer_prompt(

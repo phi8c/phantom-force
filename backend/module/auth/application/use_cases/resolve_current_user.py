@@ -136,7 +136,7 @@ class ResolveCurrentUserUseCase:
                 )
                 await self._uow.commit()
 
-        return ResolveCurrentUserResult(
+        result = ResolveCurrentUserResult(
             user_id=user_dto.id,
             email=user_dto.email,
             session_id=session.id,
@@ -146,3 +146,8 @@ class ResolveCurrentUserUseCase:
             authenticated_at=session.authenticated_at,
             mfa_verified_at=session.mfa_verified_at,
         )
+        # Authentication is read-heavy and runs before every protected CRUD
+        # handler. End its transaction now so the connection returns to the
+        # pool while the request continues with its business session.
+        await self._uow.rollback()
+        return result

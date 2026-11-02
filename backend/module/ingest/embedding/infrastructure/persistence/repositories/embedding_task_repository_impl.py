@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.ingest.embedding.domain.contracts.embedding_task_repository import (
@@ -26,6 +27,23 @@ from module.ingest.embedding.infrastructure.persistence.models.embedding_task_mo
 class EmbeddingTaskRepositoryImpl(
     EmbeddingTaskRepository,
 ):
+
+    async def has_unfinished(self, ingestion_job_id: UUID) -> bool:
+        result = await self.session.execute(select(EmbeddingTaskModel.id).where(
+            EmbeddingTaskModel.ingestion_job_id == ingestion_job_id,
+            EmbeddingTaskModel.status.in_([TaskStatus.READY.value, TaskStatus.PROCESSING.value]),
+        ).limit(1))
+        return result.first() is not None
+
+    async def renew_lease(self, task_id: UUID, *, claimed_by: str, lease_until: datetime) -> bool:
+        now = datetime.now(timezone.utc)
+        result = await self.session.execute(update(EmbeddingTaskModel).where(
+            EmbeddingTaskModel.id == task_id,
+            EmbeddingTaskModel.status == TaskStatus.PROCESSING.value,
+            EmbeddingTaskModel.claimed_by == claimed_by,
+            EmbeddingTaskModel.lease_until > now,
+        ).values(lease_until=lease_until, updated_at=now))
+        return result.rowcount == 1
 
     def __init__(
         self,

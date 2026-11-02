@@ -4,8 +4,12 @@ import tempfile
 from collections.abc import AsyncIterator
 from datetime import datetime
 from datetime import timezone
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
+from module.ingest.extraction.application.services.extraction_output_stream import extraction_output_stream
+from module.ingest.extraction.domain.contracts.extraction_engine import ExtractionResult
+from module.ingest.extraction.domain.contracts.structured_workbook_builder import StructuredWorkbookBuilder
 
 from module.ingest.extraction.domain.contracts.chunking_task_scheduler import (
     ChunkingTaskScheduler,
@@ -14,6 +18,7 @@ from module.ingest.extraction.domain.contracts.extraction_engine_resolver import
     ExtractionEngineResolver,
 )
 from module.ingest.extraction.domain.contracts.extraction_task_repository import (
+    ExtractionLeaseLostError,
     ExtractionTaskRepository,
 )
 from module.ingest.extraction.domain.contracts.object_storage import (
@@ -61,6 +66,7 @@ class ExtractDocumentUseCase:
             | None
         ) = None,
         max_attempts: int = 3,
+        structured_builder: StructuredWorkbookBuilder | None = None,
     ):
         self.task_repository = task_repository
         self.source_asset_reader = source_asset_reader
@@ -80,6 +86,7 @@ class ExtractDocumentUseCase:
         )
         self.uow = uow
         self.max_attempts = max_attempts
+        self.structured_builder = structured_builder
 
     async def execute(
         self,
@@ -101,6 +108,7 @@ class ExtractDocumentUseCase:
             )
 
         temp_path: Path | None = None
+        original_owner = task.claimed_by
 
         try:
             logger.info(
@@ -211,24 +219,37 @@ class ExtractDocumentUseCase:
                     flush=True,
                 )
 
-                extraction_engine = (
-                    await self.extraction_engine_resolver
-                    .resolve_for_job(
+                if temp_path.suffix.lower() == '.xlsx':
+                    if self.structured_builder is None:
+                        raise ValueError('Structured XLSX builder is not configured')
+                    payload = await self.structured_builder.build(
+                        source=temp_path, file_name=source_asset.file_name,
+                        document_id=task.document_id, ingestion_job_id=task.ingestion_job_id,
+                    )
+                    extraction_result = ExtractionResult(content=payload,
+                        content_type='application/vnd.phantom.structured-catalog+json')
+                else:
+                    extraction_engine = (
+                        await self.extraction_engine_resolver
+                        .resolve_for_job(
+                            task.ingestion_job_id,
+                        )
+                    )
+
+                    logger.info(
+                        "extraction engine_start task_id=%s job_id=%s",
+                        task_id,
                         task.ingestion_job_id,
                     )
-                )
 
-                logger.info(
-                    "extraction engine_start task_id=%s job_id=%s",
-                    task_id,
-                    task.ingestion_job_id,
-                )
-
-                extraction_result = (
-                    await extraction_engine.extract(
-                        temp_path,
+                    extraction_result = (
+                        await extraction_engine.extract(
+                            temp_path,
+                        )
                     )
-                )
+
+                if isinstance(extraction_result.content, dict) and extraction_result.content.get("schema_version") == 2:
+                    extraction_result.content["document_id"] = str(task.document_id)
 
                 logger.info(
                     "extraction engine_done task_id=%s content_type=%s",
@@ -317,9 +338,7 @@ class ExtractDocumentUseCase:
                         .upload_stream(
                             path=storage_path,
                             content=(
-                                self._json_stream(
-                                    extraction_result.content
-                                )
+                                extraction_output_stream(extraction_result)
                             ),
                             content_type=(
                                 extraction_result
@@ -397,6 +416,14 @@ class ExtractDocumentUseCase:
                     "Extracted asset does not match task"
                 )
 
+            if original_owner is not None:
+                owned = await self.task_repository.renew_lease(
+                    task_id, claimed_by=original_owner,
+                    lease_until=datetime.now(timezone.utc) + timedelta(seconds=300),
+                )
+                if not owned:
+                    raise ExtractionLeaseLostError('Cannot complete extraction after losing its lease')
+
             task.status = TaskStatus.COMPLETED
             task.claimed_by = None
             task.lease_until = None
@@ -408,6 +435,19 @@ class ExtractDocumentUseCase:
             await self.task_repository.update(
                 task,
             )
+
+            if getattr(existing_asset, 'content_type', None) == 'application/vnd.phantom.structured-catalog+json':
+                # The structured branch already built records + metadata embeddings.
+                # Do not create empty/fake chunk batches or classify Excel rows.
+                for stage in (IngestionStage.EXTRACTION, IngestionStage.EMBEDDING, IngestionStage.INDEXING):
+                    await self.orchestration_progress_service.mark_stage_completed(
+                        ingestion_job_id=task.ingestion_job_id, document_id=task.document_id, stage=stage)
+                for stage in (IngestionStage.CHUNKING, IngestionStage.CLASSIFICATION):
+                    await self.orchestration_progress_service.mark_stage_skipped(
+                        ingestion_job_id=task.ingestion_job_id, document_id=task.document_id, stage=stage)
+                await self.uow.commit()
+                logger.info('extraction structured_complete task_id=%s document_id=%s',task_id,task.document_id)
+                return
 
             logger.info(
                 "extraction schedule_chunking task_id=%s asset_id=%s",
@@ -466,6 +506,9 @@ class ExtractDocumentUseCase:
                 )
             )
 
+        except ExtractionLeaseLostError:
+            await self.uow.rollback()
+            raise
         except Exception as exc:
             logger.exception(
                 "extraction failed task_id=%s error=%s",
@@ -485,6 +528,8 @@ class ExtractDocumentUseCase:
             )
 
             if task is not None:
+                if task.status != TaskStatus.PROCESSING or task.claimed_by != original_owner:
+                    raise
                 if (
                     task.attempt_count
                     >= self.max_attempts

@@ -1,0 +1,15 @@
+# Ignore everything at repository root by default
+/*
+
+# Keep root .gitignore tracked
+!/.gitignore
+
+# Only allow these two project folders
+!/backend/
+!/frontend/
+
+# Include all files under allowed folders
+!/backend/**
+!/frontend/**
+
+

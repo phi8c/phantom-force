@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/shared/error-state";
 
 import { isUnauthorizedAuthError } from "../auth-errors";
 import { useCurrentUser } from "../hooks";
-import { isKnowledgeSpaceSession } from "../session-context";
+import { isKnowledgeSpaceSession, isManagementSession } from "../session-context";
 import { AuthLoadingState } from "./AuthLoadingState";
 
 interface KnowledgeSpaceAuthBoundaryProps {
@@ -25,7 +25,7 @@ export function KnowledgeSpaceAuthBoundary({
   const chatPath = `/chat/${encodeURIComponent(knowledgeSpaceId)}`;
   const isLoginRoute = pathname === loginPath;
   const sessionQuery = useCurrentUser();
-  const hasMatchingSession = isKnowledgeSpaceSession(
+  const hasMatchingSession = isManagementSession(sessionQuery.data) || isKnowledgeSpaceSession(
     sessionQuery.data,
     knowledgeSpaceId,
   );

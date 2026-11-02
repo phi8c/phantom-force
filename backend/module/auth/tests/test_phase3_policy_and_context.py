@@ -176,6 +176,26 @@ class AuthenticationContextGuardTests(unittest.TestCase):
             self.knowledge_space_id,
         )
 
+    def test_chat_accepts_management_session_for_requested_space(self) -> None:
+        from dataclasses import replace
+
+        management = replace(
+            self._current_user(None),
+            context_type=AuthenticationContextType.MANAGEMENT,
+        )
+        self.guard.require_chat_access(management, self.knowledge_space_id)
+
+    def test_chat_rejects_another_knowledge_space(self) -> None:
+        with self.assertRaises(KnowledgeSpaceContextMismatchError):
+            self.guard.require_chat_access(
+                self._current_user(self.knowledge_space_id), uuid4(),
+            )
+
+    def test_chat_accepts_matching_knowledge_space(self) -> None:
+        self.guard.require_chat_access(
+            self._current_user(self.knowledge_space_id), self.knowledge_space_id,
+        )
+
     @staticmethod
     def _current_user(knowledge_space_id) -> ResolveCurrentUserResult:
         return ResolveCurrentUserResult(

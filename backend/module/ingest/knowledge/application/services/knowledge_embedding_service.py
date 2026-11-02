@@ -34,6 +34,25 @@ class KnowledgeEmbeddingService:
     ):
         self._repository = repository
         self._embedder_factory = embedder_factory
+        self._vector_cache: dict[tuple[UUID, str], list[float]] = {}
+
+    async def embed_object(
+        self,
+        entity: KnowledgeObject,
+    ) -> tuple[list[float], list[float] | None]:
+        from module.ingest.knowledge.domain.object_semantics import (
+            identifier_embedding_text,
+            object_embedding_text,
+        )
+
+        object_text = object_embedding_text(entity)
+        identifier_text = identifier_embedding_text(entity)
+        texts = list(dict.fromkeys(filter(None, [object_text, identifier_text])))
+        embedder = await self._embedder_factory(entity.knowledge_space_id)
+        vectors = await embedder.embed_texts(texts)
+        by_text = dict(zip(texts, vectors, strict=True))
+        self._remember_vectors(entity.knowledge_space_id, by_text)
+        return by_text[object_text], by_text.get(identifier_text) if identifier_text else None
 
     async def ensure_registry_embeddings(
         self,
@@ -99,11 +118,18 @@ class KnowledgeEmbeddingService:
             len(unique_texts),
         )
 
-        embedder = await self._embedder_factory(knowledge_space_id)
-        vectors = await embedder.embed_texts(unique_texts)
-        vector_by_text = dict(
-            zip(unique_texts, vectors, strict=True),
-        )
+        vector_by_text = {
+            text: self._vector_cache[(knowledge_space_id, text)]
+            for text in unique_texts
+            if (knowledge_space_id, text) in self._vector_cache
+        }
+        missing_texts = [text for text in unique_texts if text not in vector_by_text]
+        if missing_texts:
+            embedder = await self._embedder_factory(knowledge_space_id)
+            vectors = await embedder.embed_texts(missing_texts)
+            generated = dict(zip(missing_texts, vectors, strict=True))
+            vector_by_text.update(generated)
+            self._remember_vectors(knowledge_space_id, generated)
 
         await self._repository.update_registry_embeddings(
             [
@@ -111,9 +137,24 @@ class KnowledgeEmbeddingService:
                     kind=target.kind,
                     id=target.id,
                     embedding=vector_by_text[target.text],
+                    text_version=target.text_version,
                 )
                 for target in targets
             ],
+        )
+
+    def _remember_vectors(
+        self,
+        knowledge_space_id: UUID,
+        vectors: dict[str, list[float]],
+    ) -> None:
+        if len(self._vector_cache) + len(vectors) > 512:
+            self._vector_cache.clear()
+        self._vector_cache.update(
+            {
+                (knowledge_space_id, text): vector
+                for text, vector in vectors.items()
+            }
         )
 
     @staticmethod

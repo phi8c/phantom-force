@@ -1,4 +1,7 @@
 import json
+import asyncio
+from pathlib import Path
+import tempfile
 import logging
 from typing import Any
 from uuid import UUID
@@ -17,6 +20,8 @@ from module.ingest.classification.domain.contracts.document_structure_analyzer i
     DocumentStructureAnalyzer as DocumentStructureAnalyzerContract,
 )
 from module.prompt.composition import PromptProvider
+from .document_context_payload import DocumentContextPayloadReader
+from module.ingest.classification.application.services.model_request_budget import ModelRequestBudget
 
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,7 @@ class LLMDocumentStructureAnalyzer(
             )
 
         config = dict(prompt.configuration or {})
+        budget = ModelRequestBudget.from_config(config)
         response_format = config.pop(
             "response_format",
             None,
@@ -71,11 +77,13 @@ class LLMDocumentStructureAnalyzer(
             response_format,
         )
 
+        user_prompt = self._build_user_prompt(payload)
+        budget.validate(prompt.system_prompt, user_prompt, response_format=response_format)
         llm_result = await self._llm_gateway.generate(
             provider_code="azure_openai",
             model_code="gpt-5.1",
             system_prompt=prompt.system_prompt,
-            user_prompt=self._build_user_prompt(payload),
+            user_prompt=user_prompt,
             response_format=response_format,
             config=config,
         )
@@ -123,18 +131,17 @@ class LLMDocumentStructureAnalyzer(
             document_id=document_id,
         )
 
-        content = bytearray()
-        async for chunk in asset.content:
-            content.extend(chunk)
-
-        parsed = json.loads(
-            content.decode("utf-8"),
-        )
-        if not isinstance(parsed, dict):
-            raise ValueError(
-                "Extracted asset must contain a JSON object",
-            )
-        return parsed
+        with tempfile.TemporaryDirectory(prefix='document-context-') as directory:
+            path = Path(directory) / 'extracted.json'
+            with path.open('wb') as stream:
+                async for chunk in asset.content:
+                    stream.write(chunk)
+            operation = asyncio.create_task(asyncio.to_thread(DocumentContextPayloadReader().read, path))
+            try:
+                return await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                await asyncio.gather(operation, return_exceptions=True)
+                raise
 
     @classmethod
     def _build_document_payload(
@@ -160,6 +167,11 @@ class LLMDocumentStructureAnalyzer(
             payload["fallback_text"] = cls.fallback_text(
                 extracted,
             )
+
+        if extracted.get('schema_version') == 2:
+            payload['content_sample_is_partial'] = True
+            payload['block_count'] = extracted.get('block_count')
+            payload['table_count'] = extracted.get('table_count')
 
         return payload
 

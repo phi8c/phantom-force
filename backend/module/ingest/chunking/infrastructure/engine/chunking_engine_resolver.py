@@ -3,20 +3,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from module.ingest.chunking.infrastructure.engine.chunking_engine import (
-    LegacyChunkingEngineAdapter,
-)
+from module.ingest.chunking.infrastructure.engine.streaming_chunking_engine import StreamingChunkingEngine
 from module.ingest.chunking.domain.contracts.chunking_engine import (
     ChunkingEngine,
 )
 from module.ingest.chunking.domain.contracts.chunking_engine_resolver import (
     ChunkingEngineResolver,
-)
-from module.ingest.chunking.engine.strategies.auto_chunk_strategy import (
-    AutoChunkStrategy,
-)
-from module.ingest.chunking.engine.strategies.level_chunk_strategy import (
-    LevelChunkStrategy,
 )
 from module.ingest.config.infrastructure.persistence.repositories.ingestion_config_repository_impl import (
     IngestionConfigRepositoryImpl,
@@ -36,7 +28,9 @@ class DbChunkingEngineResolver(
     def __init__(
         self,
         session: AsyncSession,
+        reviewer_factory=None,
     ):
+        self._reviewer_factory = reviewer_factory
         self._configuration_repository = (
             IngestionConfigRepositoryImpl(
                 session=session,
@@ -136,7 +130,7 @@ class DbChunkingEngineResolver(
         resolved_max_chunk_tokens = int(
             merged_configuration.get(
                 "max_chunk_tokens",
-                800,
+                4000 if chunking_strategy.code.strip().upper() == "SMART" else 800,
             )
         )
 
@@ -182,19 +176,55 @@ class DbChunkingEngineResolver(
             )
         )
 
-        if normalized_code == "SECTION":
-            return LegacyChunkingEngineAdapter(
-                strategy=LevelChunkStrategy(
-                    level=level,
-                )
+        if normalized_code == "SMART":
+            runtime = configuration.get("chunking_runtime", {})
+            counter_name = runtime.get("token_counter", "tiktoken")
+            if counter_name == "tiktoken":
+                from module.ingest.chunking.infrastructure.engine.token_counter import TiktokenCounter
+                counter = TiktokenCounter(runtime.get("encoding_name", "cl100k_base"))
+            elif counter_name == "utf8_upper_bound":
+                from module.ingest.chunking.application.services.chunk_budget import Utf8UpperBoundCounter
+                counter = Utf8UpperBoundCounter()  # bytes, not tokens: only for budgets expressed in bytes
+            else:
+                raise ValueError("Unsupported chunk token counter")
+            from .smart_chunking_engine import SmartChunkingEngine
+            return SmartChunkingEngine(
+                target_tokens=int(configuration.get("target_tokens", 2000)),
+                max_chunk_tokens=int(configuration.get("max_chunk_tokens", 4000)),
+                reserve_tokens=int(runtime.get("context_reserve_tokens", 64)),
+                include_heading_context=bool(configuration.get("include_heading_context", True)),
+                counter=counter,
             )
 
-        if normalized_code == "PARAGRAPH":
-            return LegacyChunkingEngineAdapter(
-                strategy=AutoChunkStrategy(
-                    level=level,
-                    max_chunk_tokens=max_chunk_tokens,
+        if normalized_code in {"SECTION", "PARAGRAPH"}:
+            runtime = configuration.get("chunking_runtime", {})
+            counter_name = runtime.get("token_counter", "utf8_upper_bound")
+            counter = None
+            if counter_name == "tiktoken":
+                from module.ingest.chunking.infrastructure.engine.token_counter import TiktokenCounter
+                counter = TiktokenCounter(runtime.get("encoding_name", "o200k_base"))
+            elif counter_name != "utf8_upper_bound":
+                raise ValueError("Unsupported chunk token counter")
+            engine_class = StreamingChunkingEngine
+            review_args = {}
+            review = runtime.get("structure_review", {})
+            if review.get("enabled", False):
+                if self._reviewer_factory is None:
+                    raise ValueError("Structure reviewer factory is not configured")
+                from module.ingest.chunking.application.services.structure_review import StructureReviewPlanner
+                from .reviewed_chunking_engine import ReviewedChunkingEngine
+                engine_class = ReviewedChunkingEngine
+                review_args['review_planner'] = StructureReviewPlanner(
+                    self._reviewer_factory(review),
+                    max_window_bytes=int(review.get('max_window_bytes', 32000)),
+                    max_blocks=int(review.get('max_blocks', 40)),
+                    timeout_seconds=float(review.get('timeout_seconds', 600)),
+                    review_structured=review.get('review_structured', False),
                 )
+            return engine_class(
+                strategy=normalized_code, level=level, max_chunk_tokens=max_chunk_tokens,
+                reserve_tokens=int(runtime.get("context_reserve_tokens", 64)), counter=counter,
+                **review_args,
             )
 
         raise ValueError(

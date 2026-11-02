@@ -60,6 +60,13 @@ class LegacyChunkingEngineAdapter(
                 file,
             )
 
+        if content.get("schema_version", 1) not in {1, 2}:
+            raise ValueError("Unsupported extraction schema version")
+        if content.get("schema_version") == 2:
+            if "legacy_sections" not in content:
+                raise ValueError("V2 extraction requires legacy projection until V2 chunking is enabled")
+            content = {**content, "sections": content["legacy_sections"]}
+
         print(
             "\n===== CHUNKING INPUT RAW JSON START =====",
             flush=True,

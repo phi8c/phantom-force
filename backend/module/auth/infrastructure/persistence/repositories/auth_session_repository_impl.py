@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from module.auth.domain.contracts.auth_session_repository import (
@@ -83,22 +84,21 @@ class AuthSessionRepositoryImpl(
         entity: AuthSession,
     ) -> None:
 
-        model = await super().get_by_id(
-            entity.id,
+        result = await self.session.execute(
+            update(AuthSessionModel)
+            .where(AuthSessionModel.id == entity.id)
+            .values(
+                last_seen_at=entity.last_seen_at,
+                idle_expires_at=entity.idle_expires_at,
+                mfa_verified_at=entity.mfa_verified_at,
+                revoked_at=entity.revoked_at,
+                revoked_reason=entity.revoked_reason,
+            )
         )
-
-        if model is None:
+        if result.rowcount == 0:
             raise ValueError(
                 "AuthSession not found",
             )
-
-        model.last_seen_at = entity.last_seen_at
-        model.idle_expires_at = entity.idle_expires_at
-        model.mfa_verified_at = entity.mfa_verified_at
-        model.revoked_at = entity.revoked_at
-        model.revoked_reason = entity.revoked_reason
-
-        await self.session.flush()
 
     async def list_active_by_user_id(
         self,
@@ -130,19 +130,16 @@ class AuthSessionRepositoryImpl(
         revoked_reason: str,
     ) -> None:
 
-        result = await self.session.execute(
-            select(
-                AuthSessionModel,
-            ).where(
+        await self.session.execute(
+            update(AuthSessionModel)
+            .where(
                 AuthSessionModel.user_id == user_id,
                 AuthSessionModel.revoked_at.is_(
                     None,
                 ),
-            ),
+            )
+            .values(
+                revoked_at=revoked_at,
+                revoked_reason=revoked_reason,
+            )
         )
-
-        for model in result.scalars().all():
-            model.revoked_at = revoked_at
-            model.revoked_reason = revoked_reason
-
-        await self.session.flush()

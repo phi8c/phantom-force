@@ -143,6 +143,20 @@ def require_knowledge_space_user(
     return current_user
 
 
+def enforce_chat_access(
+    current_user: ResolveCurrentUserResult,
+    knowledge_space_id: UUID,
+    guard: AuthenticationContextGuard,
+) -> None:
+    try:
+        guard.require_chat_access(current_user, knowledge_space_id)
+    except (InvalidAuthenticationContextError, KnowledgeSpaceContextMismatchError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session is not permitted to chat in this Knowledge Space",
+        )
+
+
 def enforce_knowledge_space_access(
     current_user: ResolveCurrentUserResult,
     knowledge_space_id: UUID,
